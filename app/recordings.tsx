@@ -1,0 +1,244 @@
+import React, { useEffect, useState } from 'react';
+import { View, StyleSheet, FlatList, TextInput, TouchableOpacity, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '../src/theme';
+import { Header } from '../src/components/shared/Header';
+import { Card } from '../src/components/ui/Card';
+import { Button } from '../src/components/ui/Button';
+import { Text } from '../src/components/ui/Text';
+import { Divider } from '../src/components/ui/Divider';
+import { RecordButton } from '../src/components/recorder/RecordButton';
+import { PlayButton } from '../src/components/recorder/PlayButton';
+import { useRecorder } from '../src/hooks/useRecorder';
+import { useReaderStore } from '../src/stores/readerStore';
+import * as recordingService from '../src/services/recordingService';
+import type { Recording } from '../src/types/user';
+import { BOOK_NAMES } from '../src/utils/constants';
+import { getBookName } from '../src/utils/bookTranslations';
+import { format } from 'date-fns';
+import { Ionicons } from '@expo/vector-icons';
+
+export default function RecordingsScreen() {
+  const { colors, spacing, borderRadius } = useTheme();
+  const { currentBookNumber, currentChapter, selectedVerseNumber, currentVersionId } = useReaderStore();
+  const { isRecording, durationSecs, transcribing, start, stop } = useRecorder();
+
+  const [recordings, setRecordings] = useState<Recording[]>([]);
+  const [title, setTitle] = useState('');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const fetchList = async () => {
+    try {
+      const all = await recordingService.getAllRecordings();
+      setRecordings(all);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    fetchList();
+    // Poll list status periodically if any recording is transcribing/pending
+    const timer = setInterval(() => {
+      const hasUnfinished = recordings.some(
+        (r) => r.transcriptionStatus === 'pending' || r.transcriptionStatus === 'processing'
+      );
+      if (hasUnfinished) {
+        fetchList();
+      }
+    }, 3000);
+
+    return () => clearInterval(timer);
+  }, [recordings]);
+
+  const handleStart = async () => {
+    try {
+      await start();
+    } catch (e) {
+      Alert.alert('Error', 'Failed to request microphone access.');
+    }
+  };
+
+  const handleStop = async () => {
+    const finalTitle = title.trim() || `Reflection on ${getBookName(currentBookNumber, currentVersionId)} ${currentChapter}`;
+    try {
+      await stop(finalTitle, currentBookNumber, currentChapter, selectedVerseNumber);
+      setTitle('');
+      fetchList();
+    } catch (e) {
+      Alert.alert('Error', 'Failed to save recording.');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    Alert.alert('Delete Memo', 'Are you sure you want to delete this reflection?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          await recordingService.deleteRecording(id);
+          fetchList();
+        },
+      },
+    ]);
+  };
+
+  const formatTimer = (s: number) => {
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <Header title="Voice Reflections" showBack={true} />
+
+      <FlatList
+        data={recordings}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={{ padding: spacing.base, gap: spacing.md }}
+        showsVerticalScrollIndicator={false}
+        ListHeaderComponent={
+          /* Recording Panel Card */
+          <Card style={[styles.recorderCard, { marginBottom: spacing.base }]} bordered>
+            <Text variant="h3" color="primary" style={styles.recorderTitle}>
+              Record Study Reflection
+            </Text>
+
+            <TextInput
+              value={title}
+              onChangeText={setTitle}
+              placeholder="Give this reflection a title (optional)..."
+              placeholderTextColor={colors.textTertiary}
+              style={[styles.input, { color: colors.textPrimary, borderColor: colors.border }]}
+              editable={!isRecording}
+            />
+
+            <View style={styles.linkedRow}>
+              <Ionicons name="link-outline" size={14} color={colors.primary} />
+              <Text variant="caption" color="textSecondary" style={{ marginLeft: 4 }}>
+                Linking to: {getBookName(currentBookNumber, currentVersionId)} {currentChapter}
+                {selectedVerseNumber ? `:${selectedVerseNumber}` : ''}
+              </Text>
+            </View>
+
+            <RecordButton isRecording={isRecording} onPress={isRecording ? handleStop : handleStart} />
+
+            {isRecording && (
+              <Text variant="h2" color="error" align="center" style={styles.timerText}>
+                {formatTimer(durationSecs)}
+              </Text>
+            )}
+          </Card>
+        }
+        renderItem={({ item }) => {
+          const isExpanded = expandedId === item.id;
+          const formattedDate = format(new Date(item.createdAt), 'MMM dd, yyyy · h:mm a');
+          const bookName = item.linkedBook ? getBookName(item.linkedBook, currentVersionId) : '';
+          const scriptureRef = bookName ? `${bookName} ${item.linkedChapter}${item.linkedVerse ? `:${item.linkedVerse}` : ''}` : '';
+
+          return (
+            <Card style={styles.memoCard}>
+              <TouchableOpacity activeOpacity={0.8} onPress={() => setExpandedId(isExpanded ? null : item.id)}>
+                <View style={styles.memoHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text variant="body" style={{ fontWeight: 'bold' }}>{item.title}</Text>
+                    <Text variant="caption" color="textSecondary" style={{ marginTop: 2 }}>
+                      {formattedDate} · {formatTimer(item.durationSecs)}
+                    </Text>
+                    {scriptureRef && (
+                      <View style={styles.linkBadge}>
+                        <Text variant="caption" color="primary" style={{ fontWeight: '600' }}>
+                          🔗 {scriptureRef}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <PlayButton uri={item.localFilePath} />
+                    <TouchableOpacity onPress={() => handleDelete(item.id)} style={{ marginLeft: 16 }}>
+                      <Ionicons name="trash-outline" size={20} color={colors.error} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </TouchableOpacity>
+
+              {isExpanded && (
+                <View style={{ marginTop: spacing.md }}>
+                  <Divider style={{ marginVertical: spacing.sm }} />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.xs }}>
+                    <Ionicons name="document-text-outline" size={16} color={colors.primary} />
+                    <Text variant="caption" color="primary" style={{ fontWeight: 'bold', marginLeft: 4 }}>
+                      Transcript
+                    </Text>
+                  </View>
+                  
+                  {item.transcriptionStatus === 'done' && item.transcript ? (
+                    <Text variant="bodySmall" style={{ fontStyle: 'italic', color: colors.textSecondary }}>
+                      "{item.transcript}"
+                    </Text>
+                  ) : item.transcriptionStatus === 'processing' ? (
+                    <Text variant="bodySmall" color="textTertiary" style={{ fontStyle: 'italic' }}>
+                      Whisper is transcribing your audio locally on-device...
+                    </Text>
+                  ) : item.transcriptionStatus === 'failed' ? (
+                    <Text variant="bodySmall" color="error" style={{ fontStyle: 'italic' }}>
+                      Failed to transcribe: {item.transcript || 'Unknown error'}
+                    </Text>
+                  ) : (
+                    <Text variant="bodySmall" color="textTertiary" style={{ fontStyle: 'italic' }}>
+                      Transcription pending...
+                    </Text>
+                  )}
+                </View>
+              )}
+            </Card>
+          );
+        }}
+      />
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  recorderCard: {
+    width: '100%',
+  },
+  recorderTitle: {
+    fontWeight: 'bold',
+    marginBottom: 12,
+  },
+  input: {
+    borderWidth: 1,
+    height: 44,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    fontSize: 14,
+    fontFamily: 'Outfit',
+    marginBottom: 8,
+  },
+  linkedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  timerText: {
+    fontWeight: 'bold',
+  },
+  memoCard: {
+    width: '100%',
+  },
+  memoHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  linkBadge: {
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+});

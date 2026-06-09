@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "Miktam Bible",
+    "slug": "bible-app",
+    "version": "1.0.1",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "bible-app",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F0F14"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "miktam.bible",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Record voice memos for Bible study reflection.",
+        "UIBackgroundModes": ["audio"]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundColor": "#0F0F14"
+      },
+      "package": "miktam.bible",
+      "versionCode": 2,
+      "permissions": ["RECORD_AUDIO", "VIBRATE", "RECEIVE_BOOT_COMPLETED"]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#C9A55C"
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow Miktam Bible to record voice memos."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
