@@ -36,7 +36,11 @@ export const BOOK_ABBREVIATIONS: Record<number, string> = {
   62: '1Jn', 63: '2Jn', 64: '3Jn', 65: 'Jud', 66: 'Rev',
 };
 
-/** Reverse map: "Gen" → 1, "Exo" → 2, etc. */
-export const ABBREV_TO_BOOK_NUMBER: Record<string, number> = Object.fromEntries(
-  Object.entries(BOOK_ABBREVIATIONS).map(([num, abbr]) => [abbr, parseInt(num)])
-);
+export const ABBREV_TO_BOOK_NUMBER: Record<string, number> = {};
+for (const key in BOOK_ABBREVIATIONS) {
+  if (Object.prototype.hasOwnProperty.call(BOOK_ABBREVIATIONS, key)) {
+    const bookNum = parseInt(key, 10);
+    const abbr = BOOK_ABBREVIATIONS[bookNum];
+    ABBREV_TO_BOOK_NUMBER[abbr] = bookNum;
+  }
+}

@@ -48,3 +48,6 @@ logcat_app.txt
 logcat_tail.txt
 screencap_now.png
 window_dump*.xml
+
+# test lab artifacts
+test_artifacts/

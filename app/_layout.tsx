@@ -13,7 +13,7 @@ SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const [dbInitialized, setDbInitialized] = useState(false);
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     Outfit: require('../assets/fonts/Outfit-Regular.ttf'),
     'Outfit-Medium': require('../assets/fonts/Outfit-Medium.ttf'),
     'Outfit-SemiBold': require('../assets/fonts/Outfit-SemiBold.ttf'),
@@ -39,12 +39,12 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    console.log('[RootLayout] Status changed:', { fontsLoaded, dbInitialized });
+    console.log('[RootLayout] Status changed:', { fontsLoaded, fontError, dbInitialized });
     if (fontsLoaded && dbInitialized) {
       console.log('[RootLayout] Hiding splash screen');
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, dbInitialized]);
+  }, [fontsLoaded, fontError, dbInitialized]);
 
   if (!fontsLoaded || !dbInitialized) {
     return null;
