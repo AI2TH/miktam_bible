@@ -27,6 +27,8 @@ export const VERSION_TO_LANG: Record<string, string> = {
   vie: 'vi',
   bbe: 'en',
   kjv: 'en',
+  asv: 'en',
+  web: 'en',
 };
 
 // Full book names in different supported languages

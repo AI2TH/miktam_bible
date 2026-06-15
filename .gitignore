@@ -51,3 +51,14 @@ window_dump*.xml
 
 # test lab artifacts
 test_artifacts/
+
+# developer scratch and test results
+scratch/
+test_results/
+download_model.js
+fix_model_urls.js
+pull_emulator_db.js
+query_verses.js
+parse_xml.js
+check_concordance_counts.js
+.idea/

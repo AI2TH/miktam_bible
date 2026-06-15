@@ -29,8 +29,15 @@ export async function loadWhisperModel(modelPath: string): Promise<void> {
     context = null;
   }
 
+  // Dynamically resolve package-agnostic path under the current app's document directory
+  let actualPath = modelPath;
+  if (modelPath && modelPath.includes('/files/models/')) {
+    const filename = modelPath.substring(modelPath.lastIndexOf('/') + 1);
+    actualPath = `${FileSystem.documentDirectory}models/${filename}`;
+  }
+
   // If path is empty, default to mock/fallback mode immediately
-  if (!modelPath) {
+  if (!actualPath) {
     isMockModel = true;
     console.log('[Whisper] Running in default offline fallback mode.');
     return;
@@ -40,10 +47,10 @@ export async function loadWhisperModel(modelPath: string): Promise<void> {
 
   // 1. Check if this is a mock model file by inspecting its size
   try {
-    const info = await FileSystem.getInfoAsync(modelPath);
+    const info = await FileSystem.getInfoAsync(actualPath);
     if (!info.exists) {
       isMockModel = true;
-      console.log('[Whisper] Whisper model file not found, defaulting to fallback mode.');
+      console.log('[Whisper] Whisper model file not found, defaulting to fallback mode:', actualPath);
       return;
     }
     if (info.size < 30 * 1024 * 1024) {
@@ -56,7 +63,7 @@ export async function loadWhisperModel(modelPath: string): Promise<void> {
   }
 
   // 2. Prepare native path (native whisper.rn on Android doesn't like file:// prefix)
-  const nativePath = modelPath.startsWith('file://') ? modelPath.replace('file://', '') : modelPath;
+  const nativePath = actualPath.startsWith('file://') ? actualPath.replace('file://', '') : actualPath;
 
   const initWhisper = getInitWhisper();
   if (!initWhisper) {

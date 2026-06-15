@@ -58,18 +58,78 @@ export async function getStrongsEntry(strongsNumber: string): Promise<StrongsEnt
   };
 }
 
-/** Search Strong's definitions (e.g., search "love" finds G26 agape) */
 export async function searchStrongs(query: string): Promise<StrongsEntry[]> {
   const db = getDatabase();
+
+  // Normalize query (e.g. "g 26" -> "G26", "g-26" -> "G26")
+  const normalized = query.replace(/[\s-]/g, '').toUpperCase();
+
+  // Case 1: Exact Strong's Number Match (e.g., "G26" or "H26")
+  if (/^[GH]\d+$/.test(normalized)) {
+    // Try exact first
+    let row = await db.getFirstAsync<any>(
+      'SELECT * FROM strongs_dictionary WHERE strongs_number = ?',
+      [normalized]
+    );
+
+    // Fallback: strip leading zeros (e.g. "G0026" -> "G26")
+    if (!row) {
+      const stripped = normalized.replace(/^([GH])0+/, '$1');
+      row = await db.getFirstAsync<any>(
+        'SELECT * FROM strongs_dictionary WHERE strongs_number = ?',
+        [stripped]
+      );
+    }
+
+    if (row) {
+      return [{
+        strongsNumber: row.strongs_number,
+        language: row.language,
+        originalWord: row.original_word,
+        transliteration: row.transliteration,
+        pronunciation: row.pronunciation || '',
+        definition: row.definition,
+        shortDefinition: row.short_definition || '',
+        usageCount: row.usage_count,
+        kjvTranslations: row.kjv_translations ? JSON.parse(row.kjv_translations) : [],
+      }];
+    }
+  }
+
+  // Case 2: Partial/Prefix Strong's Number Match (e.g., "G2" or "G26*")
+  if (/^[GH]\d+\*?$/.test(normalized)) {
+    const prefix = normalized.replace('*', '');
+    const rows = await db.getAllAsync<any>(
+      'SELECT * FROM strongs_dictionary WHERE strongs_number LIKE ? ORDER BY strongs_number LIMIT 100',
+      [`${prefix}%`]
+    );
+    if (rows.length > 0) {
+      return rows.map((row: any) => ({
+        strongsNumber: row.strongs_number,
+        language: row.language,
+        originalWord: row.original_word,
+        transliteration: row.transliteration,
+        pronunciation: row.pronunciation || '',
+        definition: row.definition,
+        shortDefinition: row.short_definition || '',
+        usageCount: row.usage_count,
+        kjvTranslations: row.kjv_translations ? JSON.parse(row.kjv_translations) : [],
+      }));
+    }
+  }
+
+  // Case 3: Regular text FTS match in definitions
   const rows = await db.getAllAsync<any>(
-    `SELECT sd.* FROM strongs_fts
-     JOIN strongs_dictionary sd ON sd.rowid = strongs_fts.rowid
-     WHERE strongs_fts MATCH ?
-     ORDER BY rank
-     LIMIT 20`,
+    `SELECT sd.*, f.rank
+     FROM strongs_fts f
+     JOIN strongs_dictionary sd ON sd.rowid = f.rowid
+     WHERE f.strongs_fts MATCH ?
+     ORDER BY f.rank
+     LIMIT 500`,
     [query]
   );
-  return rows.map(r => ({
+
+  return rows.map((r: any) => ({
     strongsNumber: r.strongs_number,
     language: r.language,
     originalWord: r.original_word,

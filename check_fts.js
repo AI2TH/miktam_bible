@@ -8,7 +8,7 @@ try {
            snippet(verses_fts, 0, '<b>', '</b>', '...', 30) as snippet
     FROM verses_fts
     JOIN verses v ON v.id = verses_fts.rowid
-    WHERE verses_fts MATCH 'grace' AND v.version_id = 'asv_strongs'
+    WHERE verses_fts MATCH 'grace' AND v.version_id = 'kjv'
     LIMIT 10
   `).all();
   console.log("FTS Results:");

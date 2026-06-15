@@ -18,8 +18,15 @@ export async function loadModel(modelPath: string): Promise<void> {
   }
   context = null;
 
+  // Dynamically resolve package-agnostic path under the current app's document directory
+  let actualPath = modelPath;
+  if (modelPath && modelPath.includes('/files/models/')) {
+    const filename = modelPath.substring(modelPath.lastIndexOf('/') + 1);
+    actualPath = `${FileSystem.documentDirectory}models/${filename}`;
+  }
+
   // If path is empty, default to mock/fallback mode immediately
-  if (!modelPath) {
+  if (!actualPath) {
     isMockModel = true;
     context = { mock: true } as any;
     console.log('[LLM] Running in default offline fallback mode.');
@@ -28,11 +35,11 @@ export async function loadModel(modelPath: string): Promise<void> {
 
   // Check if this is a mock model file by inspecting its size
   try {
-    const info = await FileSystem.getInfoAsync(modelPath);
+    const info = await FileSystem.getInfoAsync(actualPath);
     if (!info.exists) {
       isMockModel = true;
       context = { mock: true } as any;
-      console.log('[LLM] Model file not found, defaulting to fallback mode.');
+      console.log('[LLM] Model file not found, defaulting to fallback mode:', actualPath);
       return;
     }
     if (info.size < 50 * 1024 * 1024) {
@@ -46,7 +53,7 @@ export async function loadModel(modelPath: string): Promise<void> {
   }
 
   isMockModel = false;
-  const nativePath = modelPath.startsWith('file://') ? modelPath.replace('file://', '') : modelPath;
+  const nativePath = actualPath.startsWith('file://') ? actualPath.replace('file://', '') : actualPath;
 
   try {
     context = await initLlama({
@@ -67,40 +74,44 @@ export async function loadModel(modelPath: string): Promise<void> {
 }
 
 function mockBibleAssistantResponse(prompt: string): string {
-  // Extract user query from prompt
-  const queryMatch = prompt.match(/QUESTION:\s*(.*)/i);
-  const query = queryMatch ? queryMatch[1].trim() : '';
+  // Parse the new bible_offline.py format: Context:\n...\n\n### Question: ...\n### Answer:
+  let query = '';
+  let passages = '';
 
-  // Extract scripture passages from prompt
-  const passagesMatch = prompt.match(/SCRIPTURE PASSAGES:\s*([\s\S]*?)\s*QUESTION:/i);
-  const passages = passagesMatch ? passagesMatch[1].trim() : '';
+  const questionMatch = prompt.match(/###\s*Question:\s*([\s\S]*?)(?:\n###\s*Answer:|$)/i);
+  if (questionMatch) {
+    query = questionMatch[1].trim();
+  }
 
-  // Generate response based on query and passages
+  const contextMatch = prompt.match(/Context:\s*([\s\S]*?)(?:\n\n###|$)/i);
+  if (contextMatch) {
+    passages = contextMatch[1].trim();
+  }
+
   const queryLower = query.toLowerCase();
-  if (queryLower.includes('worry') || queryLower.includes('fear')) {
-    return `According to the scriptures, God calls us to trust Him and not to worry. In John 3:16, we learn that God's great love for the world led Him to send His only begotten Son to offer eternal life. Knowing we have this hope of eternal life helps us overcome fear and worry in our daily lives.`;
-  }
-  
-  if (queryLower.includes('fruit') || queryLower.includes('spirit')) {
-    return `In John 1:4, we are told that "In him was life; and the life was the light of men." When we follow Jesus and walk in His light, we are guided by the Spirit. This spiritual walk bears good fruits like love, joy, and peace in our lives.`;
+
+  if (queryLower.includes('worry') || queryLower.includes('fear') || queryLower.includes('anxious')) {
+    return `Scripture tells us not to be anxious about anything (Philippians 4:6). God calls us to cast all our cares upon Him, for He cares for us (1 Peter 5:7). Trust in the Lord and do not lean on your own understanding (Proverbs 3:5).`;
   }
 
-  if (queryLower.includes('armor') || queryLower.includes('god')) {
-    return `The Armor of God equips us for spiritual battles, with the Word of God serving as our main defense. In John 1:1, we see that "In the beginning was the Word, and the Word was with God, and the Word was God." By holding onto His Word, we stand strong in faith.`;
+  if (queryLower.includes('forgiv')) {
+    return `Scripture teaches that we must forgive others as God has forgiven us (Ephesians 4:32). If we confess our sins, He is faithful and just to forgive us (1 John 1:9). Forgiveness is a central theme of the Gospel.`;
   }
 
-  if (queryLower.includes('psalm') || queryLower.includes('23')) {
-    return `Psalm 23 depicts God as our shepherd leading us through the dark valleys. Genesis 1:3 declares: "And God said, Let there be light: and there was light." Even in the deepest darkness, God's light and guidance are present as our shepherd.`;
+  if (queryLower.includes('love')) {
+    return `God is love, and love comes from God (1 John 4:7-8). For God so loved the world that He gave His only begotten Son (John 3:16). We are called to love one another as Christ loved us.`;
   }
 
-  // Generic fallback that quotes one of the passages
+  if (queryLower.includes('faith') || queryLower.includes('believe')) {
+    return `Faith is the substance of things hoped for, the evidence of things not seen (Hebrews 11:1). Without faith it is impossible to please God (Hebrews 11:6). We are saved through faith, not by works (Ephesians 2:8-9).`;
+  }
+
+  // Use the first passage from context if available
   if (passages) {
     const firstLine = passages.split('\n')[0] || '';
-    const refMatch = firstLine.match(/\[\d+\]\s*([^—]*)\s*—\s*"(.*)"/);
+    const refMatch = firstLine.match(/^([A-Z0-9]+\s+\d+:\d+):\s*(.+)/);
     if (refMatch) {
-      const ref = refMatch[1].trim();
-      const text = refMatch[2].trim();
-      return `Based on ${ref}, the scriptures state: "${text}". This tells us about God's presence, light, and guidance in our life.`;
+      return `Based on ${refMatch[1]}, the scripture says: "${refMatch[2].trim()}". This teaches us about God's truth and guidance in our lives.`;
     }
   }
 
@@ -139,10 +150,11 @@ export async function generateResponse(
     {
       prompt,
       n_predict: maxTokens,
-      temperature: 0.3,     // Low temperature for factual Bible answers
+      temperature: 0.7,        // Matches bible_offline.py: temperature=0.7
       top_k: 40,
       top_p: 0.9,
-      stop: ['</s>', '<|endoftext|>', 'User:', '\nQuestion:'],
+      penalty_repeat: 1.1,    // Matches bible_offline.py: repetition_penalty=1.1
+      stop: ['### Question:', '### Question', '\nContext:', '<|im_end|>', '<|endoftext|>'],
     },
     (data) => {
       // Called for each token during streaming

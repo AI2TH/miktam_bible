@@ -17,19 +17,37 @@ async function ensureModelsDir(): Promise<void> {
 export async function getAvailableModels(): Promise<AIModel[]> {
   const db = getDatabase();
   const rows = await db.getAllAsync<any>('SELECT * FROM ai_models ORDER BY file_size_mb');
-  return rows.map(r => ({
-    id: r.id,
-    modelType: r.model_type,
-    displayName: r.display_name,
-    description: r.description || '',
-    fileSizeMb: r.file_size_mb,
-    ramRequiredMb: r.ram_required_mb,
-    downloadUrl: r.download_url,
-    filePath: r.file_path,
-    isDownloaded: r.is_downloaded === 1,
-    downloadDate: r.download_date,
-    version: r.version,
-  }));
+  
+  const models: AIModel[] = [];
+  for (const r of rows) {
+    const expectedPath = `${MODELS_DIR}${r.id}.gguf`;
+    const info = await FileSystem.getInfoAsync(expectedPath);
+    const exists = info.exists;
+    
+    const dbDownloaded = r.is_downloaded === 1;
+    if (exists !== dbDownloaded) {
+      console.log(`[ModelManager] Syncing DB state for ${r.id}: disk exists = ${exists}, DB downloaded = ${dbDownloaded}`);
+      await db.runAsync(
+        'UPDATE ai_models SET is_downloaded = ?, file_path = ? WHERE id = ?',
+        [exists ? 1 : 0, exists ? expectedPath : null, r.id]
+      );
+    }
+
+    models.push({
+      id: r.id,
+      modelType: r.model_type,
+      displayName: r.display_name,
+      description: r.description || '',
+      fileSizeMb: r.file_size_mb,
+      ramRequiredMb: r.ram_required_mb,
+      downloadUrl: r.download_url,
+      filePath: exists ? expectedPath : null,
+      isDownloaded: exists,
+      downloadDate: exists ? r.download_date : null,
+      version: r.version,
+    });
+  }
+  return models;
 }
 
 /**

@@ -3,7 +3,7 @@ import { useAudioRecorder, requestRecordingPermissionsAsync, RecordingOptions } 
 import { Platform } from 'react-native';
 import * as recordingService from '../services/recordingService';
 import { transcribeAudio, isWhisperLoaded, loadWhisperModel } from '../ai/whisperEngine';
-import { getDatabase } from '../services/database';
+import { getDatabase, isDatabaseInitialized } from '../services/database';
 
 const RECORDING_OPTIONS_16KHZ_MONO: RecordingOptions = {
   isMeteringEnabled: true,
@@ -37,11 +37,14 @@ export function useRecorder() {
   const [durationSecs, setDurationSecs] = useState(0);
   const [transcribing, setTranscribing] = useState(false);
   const timerRef = useRef<any>(null);
+  const mountedRef = useRef(true); // Guard against state updates after unmount
 
   const recorder = useAudioRecorder(RECORDING_OPTIONS_16KHZ_MONO);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, []);
@@ -68,6 +71,57 @@ export function useRecorder() {
       throw e;
     }
   }, [recorder]);
+
+  const transcribeInBackground = useCallback(async (
+    recordId: string,
+    uri: string,
+    linkedBook: number | null = null,
+    linkedChapter: number | null = null,
+    linkedVerse: number | null = null
+  ) => {
+    if (mountedRef.current) setTranscribing(true);
+    try {
+      // 1. Check database for any downloaded Whisper model path
+      let whisperModelPath = '';
+      try {
+        // getDatabase() is synchronous — do NOT await it
+        if (isDatabaseInitialized()) {
+          const db = getDatabase();
+          const rows = await db.getAllAsync<{ file_path: string }>(
+            "SELECT file_path FROM ai_models WHERE model_type = 'whisper' AND is_downloaded = 1 LIMIT 1"
+          );
+          if (rows && rows.length > 0) {
+            whisperModelPath = rows[0].file_path;
+          }
+        }
+      } catch (e) {
+        console.warn('[useRecorder] Failed to query downloaded whisper model path:', e);
+      }
+
+      // Ensure Whisper engine is initialized
+      if (!isWhisperLoaded()) {
+        await loadWhisperModel(whisperModelPath);
+      }
+
+      await recordingService.updateRecordingTranscript(recordId, '', 'processing');
+
+      // 2. Perform transcription
+      const text = await transcribeAudio(uri, linkedBook, linkedChapter, linkedVerse);
+
+      // 3. Save transcript to SQLite
+      await recordingService.updateRecordingTranscript(recordId, text, 'done');
+    } catch (err) {
+      console.error('[useRecorder] Background transcription failed:', err);
+      await recordingService.updateRecordingTranscript(
+        recordId,
+        err instanceof Error ? err.message : 'Transcription failed',
+        'failed'
+      );
+    } finally {
+      // Guard: only update state if component is still mounted
+      if (mountedRef.current) setTranscribing(false);
+    }
+  }, []);
 
   const stopRecording = useCallback(async (
     title: string,
@@ -110,54 +164,7 @@ export function useRecorder() {
       setDurationSecs(0);
       throw e;
     }
-  }, [isRecording, durationSecs, recorder]);
-
-  const transcribeInBackground = useCallback(async (
-    recordId: string,
-    uri: string,
-    linkedBook: number | null = null,
-    linkedChapter: number | null = null,
-    linkedVerse: number | null = null
-  ) => {
-    setTranscribing(true);
-    try {
-      // 1. Check database for any downloaded Whisper model path
-      let whisperModelPath = '';
-      try {
-        const db = await getDatabase();
-        const rows = await db.getAllAsync<{ file_path: string }>(
-          "SELECT file_path FROM ai_models WHERE model_type = 'whisper' AND is_downloaded = 1 LIMIT 1"
-        );
-        if (rows && rows.length > 0) {
-          whisperModelPath = rows[0].file_path;
-        }
-      } catch (e) {
-        console.warn('[useRecorder] Failed to query downloaded whisper model path:', e);
-      }
-
-      // Ensure Whisper engine is initialized
-      if (!isWhisperLoaded()) {
-        await loadWhisperModel(whisperModelPath);
-      }
-
-      await recordingService.updateRecordingTranscript(recordId, '', 'processing');
-
-      // 2. Perform transcription
-      const text = await transcribeAudio(uri, linkedBook, linkedChapter, linkedVerse);
-
-      // 3. Save transcript to SQLite
-      await recordingService.updateRecordingTranscript(recordId, text, 'done');
-    } catch (err) {
-      console.error('[useRecorder] Background transcription failed:', err);
-      await recordingService.updateRecordingTranscript(
-        recordId,
-        err instanceof Error ? err.message : 'Transcription failed',
-        'failed'
-      );
-    } finally {
-      setTranscribing(false);
-    }
-  }, []);
+  }, [isRecording, durationSecs, recorder, transcribeInBackground]);
 
   return {
     isRecording,

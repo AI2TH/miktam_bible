@@ -22,9 +22,9 @@ export default function StrongsDetailScreen() {
   useEffect(() => {
     if (strongsNumber) {
       lookupStrongs(strongsNumber);
-      loadVersesWithStrongs(strongsNumber);
+      loadVersesWithStrongs(strongsNumber, currentVersionId);
     }
-  }, [strongsNumber, lookupStrongs, loadVersesWithStrongs]);
+  }, [strongsNumber, currentVersionId, lookupStrongs, loadVersesWithStrongs]);
 
   const handleSelectVerse = (bookNumber: number, chapter: number, verseNumber: number) => {
     navigateTo(bookNumber, chapter);

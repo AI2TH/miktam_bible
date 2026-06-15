@@ -13,8 +13,8 @@ console.log("==================================================");
 
 try {
   // 1. Force stop the app on the emulator to release locks
-  console.log("Stopping com.yourname.bibleapp on emulator...");
-  spawnSync(adbPath, ['shell', 'am', 'force-stop', 'com.yourname.bibleapp']);
+  console.log("Stopping miktam.bible on emulator...");
+  spawnSync(adbPath, ['shell', 'am', 'force-stop', 'miktam.bible']);
 
   // 2. Update the pulled database
   console.log(`Opening ${pulledDbPath}...`);
@@ -62,12 +62,12 @@ try {
     
     // Copy the file from /data/local/tmp/bible.db to the app files sandbox
     const cpResult = spawnSync(adbPath, [
-      'shell', 'run-as', 'com.yourname.bibleapp', 
-      'cp', '/data/local/tmp/bible.db', '/data/user/0/com.yourname.bibleapp/files/SQLite/bible.db'
+      'shell', 'run-as', 'miktam.bible', 
+      'cp', '/data/local/tmp/bible.db', '/data/user/0/miktam.bible/files/SQLite/bible.db'
     ]);
     
     if (cpResult.status === 0) {
-      console.log("Database successfully copied to com.yourname.bibleapp files sandbox!");
+      console.log("Database successfully copied to miktam.bible files sandbox!");
       // Clean up temp file
       spawnSync(adbPath, ['shell', 'rm', '-f', '/data/local/tmp/bible.db']);
     } else {
@@ -77,8 +77,8 @@ try {
 
   // 5. Remove wal and shm files on emulator so it re-reads main DB file fresh
   console.log("Clearing SQLite WAL and SHM cache on emulator...");
-  spawnSync(adbPath, ['shell', 'run-as', 'com.yourname.bibleapp', 'rm', '-f', '/data/user/0/com.yourname.bibleapp/files/SQLite/bible.db-wal']);
-  spawnSync(adbPath, ['shell', 'run-as', 'com.yourname.bibleapp', 'rm', '-f', '/data/user/0/com.yourname.bibleapp/files/SQLite/bible.db-shm']);
+  spawnSync(adbPath, ['shell', 'run-as', 'miktam.bible', 'rm', '-f', '/data/user/0/miktam.bible/files/SQLite/bible.db-wal']);
+  spawnSync(adbPath, ['shell', 'run-as', 'miktam.bible', 'rm', '-f', '/data/user/0/miktam.bible/files/SQLite/bible.db-shm']);
   console.log("Cache cleared!");
 
   console.log("\n==================================================");
