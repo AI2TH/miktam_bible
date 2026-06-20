@@ -63,7 +63,7 @@ export default function BookmarksScreen() {
             <View style={styles.cardWrapper}>
               <View style={{ flex: 1 }}>
                 <VerseCard
-                  bookName={getBookName(item.bookNumber, currentVersionId)}
+                  bookName={getBookName(item.bookNumber, item.versionId)}
                   chapter={item.chapter}
                   verseNumber={item.verseNumber}
                   text={item.text}

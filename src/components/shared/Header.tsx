@@ -8,6 +8,7 @@ import { IconButton } from '../ui/IconButton';
 interface HeaderProps {
   title: string;
   showBack?: boolean;
+  onBack?: () => void;
   rightAction?: React.ReactNode;
   style?: any;
 }
@@ -15,13 +16,16 @@ interface HeaderProps {
 export function Header({
   title,
   showBack = false,
+  onBack,
   rightAction,
   style,
 }: HeaderProps) {
   const { colors, spacing, borderRadius } = useTheme();
 
   const handleBack = () => {
-    if (router.canGoBack()) {
+    if (onBack) {
+      onBack();
+    } else if (router.canGoBack()) {
       router.back();
     } else {
       router.replace('/(tabs)');

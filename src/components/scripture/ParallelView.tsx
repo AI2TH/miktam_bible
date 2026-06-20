@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, FlatList } from 'react-native';
 import { useTheme } from '../../theme';
 import { Text } from '../ui/Text';
 import { Card } from '../ui/Card';
@@ -19,6 +19,43 @@ interface ParallelItem {
   verse: Verse | null;
   loading: boolean;
 }
+
+// Memoized Translation Card component for optimal rendering performance
+const TranslationCard = React.memo(({ item, fontSize, colors, spacing }: {
+  item: ParallelItem;
+  fontSize: number;
+  colors: any;
+  spacing: any;
+}) => {
+  return (
+    <Card style={styles.card}>
+      <View style={styles.header}>
+        <Text variant="h3" color="primary" style={{ fontWeight: 'bold' }}>
+          {item.version.name} ({item.version.id.toUpperCase()})
+        </Text>
+      </View>
+      {item.loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator color={colors.primary} size="small" />
+        </View>
+      ) : item.verse ? (
+        <Text
+          variant="scripture"
+          style={[
+            styles.verseText,
+            { fontSize: fontSize - 1, lineHeight: (fontSize - 1) * 1.6 },
+          ]}
+        >
+          {item.verse.text}
+        </Text>
+      ) : (
+        <Text variant="caption" color="textTertiary">
+          Verse not available in this version.
+        </Text>
+      )}
+    </Card>
+  );
+});
 
 export function ParallelView({
   bookNumber,
@@ -70,39 +107,25 @@ export function ParallelView({
   }
 
   return (
-    <View style={[styles.container, { gap: spacing.md }]}>
-      {items.map((item) => (
-        <Card key={item.version.id} style={styles.card}>
-          <View style={styles.header}>
-            <Text variant="h3" color="primary" style={{ fontWeight: 'bold' }}>
-              {item.version.name} ({item.version.id.toUpperCase()})
-            </Text>
-          </View>
-          {item.loading ? (
-            <ActivityIndicator color={colors.primary} size="small" />
-          ) : item.verse ? (
-            <Text
-              variant="scripture"
-              style={[
-                styles.verseText,
-                { fontSize: fontSize - 1, lineHeight: (fontSize - 1) * 1.6 },
-              ]}
-            >
-              {item.verse.text}
-            </Text>
-          ) : (
-            <Text variant="caption" color="textTertiary">
-              Verse not available in this version.
-            </Text>
-          )}
-        </Card>
-      ))}
-    </View>
+    <FlatList
+      data={items}
+      keyExtractor={(item) => item.version.id}
+      contentContainerStyle={[styles.listContent, { gap: spacing.md }]}
+      showsVerticalScrollIndicator={false}
+      renderItem={({ item }) => (
+        <TranslationCard
+          item={item}
+          fontSize={fontSize}
+          colors={colors}
+          spacing={spacing}
+        />
+      )}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  listContent: {
     paddingVertical: 12,
   },
   card: {
@@ -114,6 +137,11 @@ const styles = StyleSheet.create({
   },
   verseText: {
     marginTop: 4,
+  },
+  loadingContainer: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   center: {
     alignItems: 'center',

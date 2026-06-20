@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-const CHAPTERS_PER_BOOK: Record<number, number> = {
+export const CHAPTERS_PER_BOOK: Record<number, number> = {
   1: 50, 2: 40, 3: 27, 4: 36, 5: 34, 6: 24, 7: 21, 8: 4, 9: 31, 10: 24,
   11: 22, 12: 25, 13: 29, 14: 36, 15: 10, 16: 13, 17: 10, 18: 42, 19: 150, 20: 31,
   21: 12, 22: 8, 23: 66, 24: 52, 25: 5, 26: 48, 27: 12, 28: 14, 29: 3, 30: 9,

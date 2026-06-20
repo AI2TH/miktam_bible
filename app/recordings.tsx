@@ -10,11 +10,12 @@ import { Divider } from '../src/components/ui/Divider';
 import { RecordButton } from '../src/components/recorder/RecordButton';
 import { PlayButton } from '../src/components/recorder/PlayButton';
 import { useRecorder } from '../src/hooks/useRecorder';
-import { useReaderStore } from '../src/stores/readerStore';
+import { useReaderStore, CHAPTERS_PER_BOOK } from '../src/stores/readerStore';
 import * as recordingService from '../src/services/recordingService';
 import type { Recording } from '../src/types/user';
 import { BOOK_NAMES } from '../src/utils/constants';
 import { getBookName } from '../src/utils/bookTranslations';
+import { BottomSheet } from '../src/components/ui/BottomSheet';
 import { format } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -26,6 +27,18 @@ export default function RecordingsScreen() {
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [title, setTitle] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Selector states
+  const [selectedBookNumber, setSelectedBookNumber] = useState<number>(currentBookNumber);
+  const [selectedChapter, setSelectedChapter] = useState<number>(currentChapter);
+  const [bookSelectorVisible, setBookSelectorVisible] = useState(false);
+  const [chapterSelectorVisible, setChapterSelectorVisible] = useState(false);
+
+  // Sync state if store updates (e.g. initial mount)
+  useEffect(() => {
+    setSelectedBookNumber(currentBookNumber);
+    setSelectedChapter(currentChapter);
+  }, [currentBookNumber, currentChapter]);
 
   const fetchList = async () => {
     try {
@@ -60,9 +73,9 @@ export default function RecordingsScreen() {
   };
 
   const handleStop = async () => {
-    const finalTitle = title.trim() || `Reflection on ${getBookName(currentBookNumber, currentVersionId)} ${currentChapter}`;
+    const finalTitle = title.trim() || `Reflection on ${getBookName(selectedBookNumber, currentVersionId)} ${selectedChapter}`;
     try {
-      await stop(finalTitle, currentBookNumber, currentChapter, selectedVerseNumber);
+      await stop(finalTitle, selectedBookNumber, selectedChapter, null);
       setTitle('');
       fetchList();
     } catch (e) {
@@ -115,12 +128,32 @@ export default function RecordingsScreen() {
               editable={!isRecording}
             />
 
-            <View style={styles.linkedRow}>
-              <Ionicons name="link-outline" size={14} color={colors.primary} />
-              <Text variant="caption" color="textSecondary" style={{ marginLeft: 4 }}>
-                Linking to: {getBookName(currentBookNumber, currentVersionId)} {currentChapter}
-                {selectedVerseNumber ? `:${selectedVerseNumber}` : ''}
-              </Text>
+            <Text variant="caption" color="textSecondary" style={{ marginBottom: 4 }}>
+              Link this recording to:
+            </Text>
+            
+            <View style={styles.selectorRow}>
+              <TouchableOpacity
+                style={[styles.dropdownButton, { borderColor: colors.border, backgroundColor: colors.surfaceMuted }]}
+                onPress={() => !isRecording && setBookSelectorVisible(true)}
+                disabled={isRecording}
+              >
+                <Text style={{ color: colors.textPrimary, fontFamily: 'Outfit', fontSize: 14 }}>
+                  {getBookName(selectedBookNumber, currentVersionId)}
+                </Text>
+                <Ionicons name="chevron-down" size={14} color={colors.textSecondary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.dropdownButton, { borderColor: colors.border, backgroundColor: colors.surfaceMuted, width: 100 }]}
+                onPress={() => !isRecording && setChapterSelectorVisible(true)}
+                disabled={isRecording}
+              >
+                <Text style={{ color: colors.textPrimary, fontFamily: 'Outfit', fontSize: 14 }}>
+                  Ch {selectedChapter}
+                </Text>
+                <Ionicons name="chevron-down" size={14} color={colors.textSecondary} />
+              </TouchableOpacity>
             </View>
 
             <RecordButton isRecording={isRecording} onPress={isRecording ? handleStop : handleStart} />
@@ -197,6 +230,83 @@ export default function RecordingsScreen() {
           );
         }}
       />
+
+      <BottomSheet
+        visible={bookSelectorVisible}
+        onClose={() => setBookSelectorVisible(false)}
+        title="Select Bible Book"
+      >
+        <View style={styles.gridContainer}>
+          {Object.entries(BOOK_NAMES).map(([numStr, name]) => {
+            const num = parseInt(numStr, 10);
+            const isSelected = num === selectedBookNumber;
+            return (
+              <TouchableOpacity
+                key={num}
+                style={[
+                  styles.gridItem,
+                  {
+                    backgroundColor: isSelected ? colors.primary : colors.surfaceMuted,
+                    borderColor: isSelected ? colors.primary : colors.border,
+                  },
+                ]}
+                onPress={() => {
+                  setSelectedBookNumber(num);
+                  setSelectedChapter(1);
+                  setBookSelectorVisible(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.gridItemText,
+                    { color: isSelected ? colors.background : colors.textPrimary },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {getBookName(num, currentVersionId)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </BottomSheet>
+
+      <BottomSheet
+        visible={chapterSelectorVisible}
+        onClose={() => setChapterSelectorVisible(false)}
+        title="Select Chapter"
+      >
+        <View style={styles.gridContainer}>
+          {Array.from({ length: CHAPTERS_PER_BOOK[selectedBookNumber] || 50 }, (_, i) => i + 1).map((ch) => {
+            const isSelected = ch === selectedChapter;
+            return (
+              <TouchableOpacity
+                key={ch}
+                style={[
+                  styles.gridItemChapter,
+                  {
+                    backgroundColor: isSelected ? colors.primary : colors.surfaceMuted,
+                    borderColor: isSelected ? colors.primary : colors.border,
+                  },
+                ]}
+                onPress={() => {
+                  setSelectedChapter(ch);
+                  setChapterSelectorVisible(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.gridItemText,
+                    { color: isSelected ? colors.background : colors.textPrimary },
+                  ]}
+                >
+                  {ch}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </BottomSheet>
     </SafeAreaView>
   );
 }
@@ -219,15 +329,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     fontSize: 14,
     fontFamily: 'Outfit',
-    marginBottom: 8,
-  },
-  linkedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   timerText: {
     fontWeight: 'bold',
+    marginTop: 12,
   },
   memoCard: {
     width: '100%',
@@ -240,5 +346,48 @@ const styles = StyleSheet.create({
   linkBadge: {
     marginTop: 4,
     alignSelf: 'flex-start',
+  },
+  selectorRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  dropdownButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    height: 44,
+    flex: 1,
+  },
+  gridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingVertical: 8,
+  },
+  gridItem: {
+    width: '31%',
+    aspectRatio: 2.2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  gridItemChapter: {
+    width: '18%',
+    aspectRatio: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  gridItemText: {
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+    fontFamily: 'Outfit',
   },
 });

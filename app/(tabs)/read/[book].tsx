@@ -35,9 +35,13 @@ export default function BookChaptersScreen() {
     });
   };
 
+  const handleBack = () => {
+    router.replace('/(tabs)/read');
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <Header title={bookName} showBack={true} />
+      <Header title={bookName} showBack={true} onBack={handleBack} />
       <View style={[styles.content, { padding: spacing.base }]}>
         <ChapterGrid totalChapters={totalChapters} onSelectChapter={handleSelectChapter} />
       </View>

@@ -44,7 +44,7 @@ export const CREATE_TABLES_SQL = [
     text,
     content=verses,
     content_rowid=id,
-    tokenize='porter unicode61'
+    tokenize='unicode61'
   )`,
 
   // Triggers to keep FTS in sync with verses table
