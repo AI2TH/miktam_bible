@@ -118,15 +118,26 @@ export async function searchStrongs(query: string): Promise<StrongsEntry[]> {
     }
   }
 
-  // Case 3: Regular text FTS match in definitions
+  // Case 3: Regular text FTS match in definitions + KJV translations UNION
+  const likePattern = `%"${query.toLowerCase()}"%`;
   const rows = await db.getAllAsync<any>(
-    `SELECT sd.*, f.rank
+    `SELECT sd.*, 1 as is_kjv_match, 0 as fts_rank
+     FROM strongs_dictionary sd
+     WHERE sd.kjv_translations LIKE ?
+
+     UNION ALL
+
+     SELECT sd.*, 0 as is_kjv_match, f.rank as fts_rank
      FROM strongs_fts f
      JOIN strongs_dictionary sd ON sd.rowid = f.rowid
      WHERE f.strongs_fts MATCH ?
-     ORDER BY f.rank
+       AND sd.rowid NOT IN (
+         SELECT rowid FROM strongs_dictionary WHERE kjv_translations LIKE ?
+       )
+
+     ORDER BY is_kjv_match DESC, fts_rank
      LIMIT 500`,
-    [query]
+    [likePattern, query, likePattern]
   );
 
   return rows.map((r: any) => ({

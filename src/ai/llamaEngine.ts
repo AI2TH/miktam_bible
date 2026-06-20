@@ -1,5 +1,7 @@
 import { initLlama, type LlamaContext } from 'llama.rn';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as Device from 'expo-device';
+
 
 let context: LlamaContext | null = null;
 let isMockModel = false;
@@ -25,11 +27,11 @@ export async function loadModel(modelPath: string): Promise<void> {
     actualPath = `${FileSystem.documentDirectory}models/${filename}`;
   }
 
-  // If path is empty, default to mock/fallback mode immediately
-  if (!actualPath) {
+  // If path is empty or running on emulator, default to mock/fallback mode
+  if (!actualPath || !Device.isDevice) {
     isMockModel = true;
     context = { mock: true } as any;
-    console.log('[LLM] Running in default offline fallback mode.');
+    console.log('[LLM] Running in default offline fallback mode (isDevice:', Device.isDevice, ')');
     return;
   }
 
@@ -90,29 +92,66 @@ function mockBibleAssistantResponse(prompt: string): string {
 
   const queryLower = query.toLowerCase();
 
+  // 1. Detailed theme-based mock responses
   if (queryLower.includes('worry') || queryLower.includes('fear') || queryLower.includes('anxious')) {
-    return `Scripture tells us not to be anxious about anything (Philippians 4:6). God calls us to cast all our cares upon Him, for He cares for us (1 Peter 5:7). Trust in the Lord and do not lean on your own understanding (Proverbs 3:5).`;
+    return `Scripture tells us not to be anxious about anything, but in everything by prayer and supplication, with thanksgiving, to let our requests be made known to God (Philippians 4:6). God calls us to cast all our cares upon Him, for He cares for us (1 Peter 5:7). Trusting in the Lord with all our heart keeps us secure in His perfect peace.`;
   }
 
   if (queryLower.includes('forgiv')) {
-    return `Scripture teaches that we must forgive others as God has forgiven us (Ephesians 4:32). If we confess our sins, He is faithful and just to forgive us (1 John 1:9). Forgiveness is a central theme of the Gospel.`;
+    return `Scripture teaches that we must forgive others as God has forgiven us (Ephesians 4:32). If we confess our sins, He is faithful and just to forgive us and cleanse us from all unrighteousness (1 John 1:9). Extending grace to others is a cornerstone of the Gospel walk.`;
   }
 
   if (queryLower.includes('love')) {
-    return `God is love, and love comes from God (1 John 4:7-8). For God so loved the world that He gave His only begotten Son (John 3:16). We are called to love one another as Christ loved us.`;
+    return `God is love, and he who abides in love abides in God, and God in him (1 John 4:16). For God so loved the world that He gave His only begotten Son, that whoever believes in Him should not perish but have everlasting life (John 3:16). We are called to love one another sincerely as Christ loved us.`;
   }
 
   if (queryLower.includes('faith') || queryLower.includes('believe')) {
-    return `Faith is the substance of things hoped for, the evidence of things not seen (Hebrews 11:1). Without faith it is impossible to please God (Hebrews 11:6). We are saved through faith, not by works (Ephesians 2:8-9).`;
+    return `Faith is the substance of things hoped for, the evidence of things not seen (Hebrews 11:1). Without faith it is impossible to please God, for he who comes to God must believe that He is a rewarder of those who diligently seek Him (Hebrews 11:6). We are saved through faith by grace (Ephesians 2:8).`;
   }
 
-  // Use the first passage from context if available
+  // 2. Try parsing FTS passages from context
   if (passages) {
-    const firstLine = passages.split('\n')[0] || '';
-    const refMatch = firstLine.match(/^([A-Z0-9]+\s+\d+:\d+):\s*(.+)/);
-    if (refMatch) {
-      return `Based on ${refMatch[1]}, the scripture says: "${refMatch[2].trim()}". This teaches us about God's truth and guidance in our lives.`;
+    const lines = passages.split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.length > 0) {
+      const firstLine = lines[0];
+      const refMatch = firstLine.match(/^([A-Z0-9]+\s+\d+:\d+):\s*(.+)/);
+      if (refMatch) {
+        const ref = refMatch[1];
+        const text = refMatch[2].replace(/<[^>]*>/g, '').trim();
+        return `Regarding your question "${query}", let's consider ${ref}: "${text}".\n\nThis passage teaches us about God's sovereign grace, His divine timing, and how we are called to walk in obedience. In the context of your query, it reminds us to seek His guidance in every aspect of our lives, resting in the assurance of His word.`;
+      }
     }
+  }
+
+  // 3. Fall back to the active reader store selection if available
+  let fallbackRef = '';
+  let fallbackText = '';
+  try {
+    const { useReaderStore } = require('../stores/readerStore');
+    const { getDatabase } = require('../services/database');
+    const { getBookName } = require('../utils/bookTranslations');
+    
+    const state = useReaderStore.getState();
+    const bookNum = state.currentBookNumber || 1;
+    const chapter = state.currentChapter || 1;
+    const verseNum = state.selectedVerseNumber || 1;
+    const versionId = state.currentVersionId || 'kjv';
+    
+    const db = getDatabase();
+    const row = db.getFirstSync(
+      'SELECT text FROM verses WHERE version_id = ? AND book_number = ? AND chapter = ? AND verse_number = ?',
+      [versionId, bookNum, chapter, verseNum]
+    );
+    if (row && row.text) {
+      fallbackText = row.text.replace(/<[^>]*>/g, '').trim();
+      fallbackRef = `${getBookName(bookNum, versionId)} ${chapter}:${verseNum}`;
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  if (fallbackRef && fallbackText) {
+    return `Let's consider your question in light of ${fallbackRef}, which says: "${fallbackText}".\n\nThis verse provides a clear foundation for our study. It calls us to align our hearts with God's word, seeking His guidance and trusting in His promises as we study and grow.`;
   }
 
   return `I am here to help you study scripture. Please ask a biblical question, and I will search the available passages to answer.`;

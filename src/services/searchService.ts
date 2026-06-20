@@ -63,7 +63,7 @@ const SYNONYMS: Record<string, string[]> = {
 export async function searchFTS(
   query: string,
   versionId: string,
-  limit: number = 20,
+  limit: number = 100,
   isRag: boolean = false
 ): Promise<SearchResult[]> {
   const db = getDatabase();

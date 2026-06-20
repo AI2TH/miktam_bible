@@ -166,6 +166,13 @@ export default function ChapterReaderScreen() {
     router.push(`/concordance/${num}`);
   };
 
+  const handleBack = () => {
+    router.replace({
+      pathname: '/(tabs)/read/[book]',
+      params: { book: currentBookNumber.toString() },
+    });
+  };
+
   const title = `${getBookName(currentBookNumber, currentVersionId)} ${currentChapter}`;
 
   return (
@@ -174,6 +181,7 @@ export default function ChapterReaderScreen() {
       <Header
         title={title}
         showBack={true}
+        onBack={handleBack}
         rightAction={
           <View style={styles.headerRight}>
             <TouchableOpacity 
@@ -337,6 +345,7 @@ export default function ChapterReaderScreen() {
         visible={parallelVisible}
         onClose={() => setParallelVisible(false)}
         title="Compare Translations"
+        scrollable={false}
       >
         {selectedVerse !== null && (
           <ParallelView

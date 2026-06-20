@@ -10,6 +10,7 @@ interface BottomSheetProps {
   title?: string;
   children: React.ReactNode;
   maxHeight?: number | string;
+  scrollable?: boolean;
 }
 
 export function BottomSheet({
@@ -18,6 +19,7 @@ export function BottomSheet({
   title,
   children,
   maxHeight = '80%',
+  scrollable = true,
 }: BottomSheetProps) {
   const { colors, borderRadius, spacing, shadows } = useTheme();
 
@@ -73,14 +75,20 @@ export function BottomSheet({
                 </View>
               )}
 
-              {/* Content scroll area */}
-              <ScrollView
-                style={{ paddingHorizontal: spacing.base }}
-                contentContainerStyle={styles.scrollContent}
-                keyboardShouldPersistTaps="handled"
-              >
-                {children}
-              </ScrollView>
+              {/* Content area */}
+              {scrollable ? (
+                <ScrollView
+                  style={{ paddingHorizontal: spacing.base }}
+                  contentContainerStyle={styles.scrollContent}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {children}
+                </ScrollView>
+              ) : (
+                <View style={{ flex: 1, paddingHorizontal: spacing.base }}>
+                  {children}
+                </View>
+              )}
             </KeyboardAvoidingView>
           </TouchableWithoutFeedback>
         </View>
