@@ -16,7 +16,7 @@ export default function SearchScreen() {
   const { colors, spacing, borderRadius } = useTheme();
   const { currentVersionId, navigateTo } = useReaderStore();
   const [query, setQuery] = useState('');
-  const { results, loading, search, clear, correctedQuery } = useSearch();
+  const { results, loading, loadingMore, hasMore, search, loadMore, clear, correctedQuery } = useSearch();
 
   // Premium Live Search on typing with a 300ms debounce
   React.useEffect(() => {
@@ -116,6 +116,25 @@ export default function SearchScreen() {
           data={results}
           keyExtractor={(item) => `${item.verse.versionId}:${item.verse.bookNumber}:${item.verse.chapter}:${item.verse.verseNumber}`}
           contentContainerStyle={{ padding: spacing.base, gap: spacing.md }}
+          onEndReached={hasMore ? loadMore : undefined}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={
+            hasMore ? (
+              <TouchableOpacity
+                onPress={loadMore}
+                disabled={loadingMore}
+                style={[styles.loadMore, { paddingVertical: spacing.md }]}
+              >
+                {loadingMore ? (
+                  <ActivityIndicator color={colors.primary} />
+                ) : (
+                  <Text variant="body" color="primary" style={{ fontWeight: '600' }}>
+                    Load more results
+                  </Text>
+                )}
+              </TouchableOpacity>
+            ) : null
+          }
           renderItem={({ item }) => (
             <VerseCard
               bookName={getBookName(item.verse.bookNumber, currentVersionId)}
@@ -161,5 +180,9 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  loadMore: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

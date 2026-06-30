@@ -1,4 +1,4 @@
-import { getDatabase } from '../services/database';
+import { initSearchDatabase } from '../services/database';
 
 let dictionary: string[] | null = null;
 
@@ -37,7 +37,7 @@ function levenshtein(a: string, b: string): number {
 
 export async function initDictionary() {
   if (dictionary !== null) return;
-  const db = getDatabase();
+  const db = await initSearchDatabase();
   try {
     // Only load English words for now
     const rows = await db.getAllAsync<{ word: string }>('SELECT word FROM concordance_index WHERE lang = "en"');
