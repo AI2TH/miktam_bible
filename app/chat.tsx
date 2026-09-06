@@ -199,6 +199,7 @@ export default function ChatScreen() {
               data={dataList}
               keyExtractor={(item) => item.id}
               contentContainerStyle={{ padding: spacing.base }}
+              onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
               renderItem={({ item }) => (
                 <ChatBubble
                   message={item}

@@ -155,13 +155,17 @@ export async function getAllNotes(): Promise<(Note & { bookName: string })[]> {
 
 /** Search within notes content using FTS5 */
 export async function searchNotes(query: string): Promise<(Note & { bookName: string })[]> {
+  const cleanQuery = query.replace(/['\"*]/g, '').trim();
+  if (!cleanQuery) return [];
+
   const db = getDatabase();
+  const ftsQuery = `"${cleanQuery}"*`;
   const rows = await db.getAllAsync<any>(
     `SELECT n.* FROM notes_fts
      JOIN notes n ON n.rowid = notes_fts.rowid
      WHERE notes_fts MATCH ?
      ORDER BY n.updated_at DESC`,
-    [query]
+    [ftsQuery]
   );
   return rows.map(r => ({
     id: r.id,

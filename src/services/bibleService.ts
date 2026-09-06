@@ -33,6 +33,45 @@ export async function getDownloadedVersions(): Promise<BibleVersion[]> {
   }));
 }
 
+export interface BibleLanguageRecord {
+  code: string;
+  name: string;
+  localName: string;
+  versionCount: number;
+}
+
+/** Get all registered languages ordered by name */
+export async function getAllLanguages(): Promise<BibleLanguageRecord[]> {
+  const db = getDatabase();
+  const rows = await db.getAllAsync<any>(
+    'SELECT * FROM bible_languages ORDER BY name'
+  );
+  return rows.map(r => ({
+    code: r.code,
+    name: r.name,
+    localName: r.local_name,
+    versionCount: r.version_count,
+  }));
+}
+
+/** Get versions for a specific language or filter query */
+export async function getVersionsByLanguage(langCode: string): Promise<BibleVersion[]> {
+  const db = getDatabase();
+  const query = langCode === 'all'
+    ? 'SELECT * FROM bible_versions ORDER BY is_downloaded DESC, name ASC'
+    : 'SELECT * FROM bible_versions WHERE language = ? ORDER BY is_downloaded DESC, name ASC';
+  const params = langCode === 'all' ? [] : [langCode];
+  const rows = await db.getAllAsync<any>(query, params);
+  return rows.map(r => ({
+    id: r.id,
+    name: r.name,
+    language: r.language,
+    isDownloaded: r.is_downloaded === 1,
+    downloadDate: r.download_date,
+    totalSizeMb: r.total_size_mb,
+  }));
+}
+
 // ─── BOOKS ───────────────────────────────────────
 
 /** Get all 66 books for a version, ordered by book_number */
@@ -82,12 +121,24 @@ export async function getChapterVerses(
   console.log(`[bibleService] getChapterVerses called for versionId="${versionId}", bookNumber=${bookNumber}, chapter=${chapter}`);
   const db = getDatabase();
   try {
-    const rows = await db.getAllAsync<any>(
+    let rows = await db.getAllAsync<any>(
       `SELECT * FROM verses
        WHERE version_id = ? AND book_number = ? AND chapter = ?
        ORDER BY verse_number`,
       [versionId, bookNumber, chapter]
     );
+
+    // If version text does not exist in local DB (e.g. study module 'con'), gracefully fallback to KJV
+    if (rows.length === 0 && versionId !== 'kjv') {
+      console.log(`[bibleService] No verses for ${versionId}, falling back to kjv`);
+      rows = await db.getAllAsync<any>(
+        `SELECT * FROM verses
+         WHERE version_id = 'kjv' AND book_number = ? AND chapter = ?
+         ORDER BY verse_number`,
+        [bookNumber, chapter]
+      );
+    }
+
     console.log(`[bibleService] getChapterVerses fetched ${rows.length} verses`);
     return rows.map(r => ({
       id: r.id,

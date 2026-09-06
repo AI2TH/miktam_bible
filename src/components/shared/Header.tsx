@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
 import { Text } from '../ui/Text';
 import { IconButton } from '../ui/IconButton';
@@ -20,7 +21,7 @@ export function Header({
   rightAction,
   style,
 }: HeaderProps) {
-  const { colors, spacing, borderRadius } = useTheme();
+  const { colors, spacing } = useTheme();
 
   const handleBack = () => {
     if (onBack) {
@@ -40,9 +41,9 @@ export function Header({
           backgroundColor: colors.background,
           borderBottomColor: colors.border,
           borderBottomWidth: 1,
-          paddingTop: spacing.xl, // Simple padding, safe-area-context handles insets
+          paddingTop: spacing.md,
           paddingBottom: spacing.sm,
-          paddingHorizontal: spacing.base,
+          paddingHorizontal: spacing.sm,
         },
         style,
       ]}
@@ -51,19 +52,19 @@ export function Header({
         {showBack && (
           <IconButton
             onPress={handleBack}
-            size={36}
+            size={40}
             backgroundColor="transparent"
             icon={
-              <Text variant="body" color="primary" style={styles.backIcon}>
-                ←
-              </Text>
+              <Ionicons name="arrow-back" size={24} color={colors.primary} />
             }
             style={styles.backButton}
           />
         )}
-        <Text variant="h2" style={styles.title}>
-          {title}
-        </Text>
+        <View style={styles.titleWrapper}>
+          <Text variant="h2" numberOfLines={1} ellipsizeMode="tail" style={styles.title}>
+            {title}
+          </Text>
+        </View>
       </View>
       {rightAction && <View style={styles.rightContainer}>{rightAction}</View>}
     </View>
@@ -75,25 +76,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 64,
+    minHeight: 56,
   },
   leftContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-  },
-  backButton: {
     marginRight: 8,
   },
-  backIcon: {
-    fontSize: 22,
-    fontWeight: 'bold',
+  backButton: {
+    marginRight: 4,
+  },
+  titleWrapper: {
+    flex: 1,
+    justifyContent: 'center',
   },
   title: {
     fontWeight: '700',
+    fontSize: 20,
   },
   rightContainer: {
-    justifyContent: 'center',
-    alignItems: 'flex-end',
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
   },
 });

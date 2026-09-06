@@ -20,7 +20,8 @@ export async function getAvailableModels(): Promise<AIModel[]> {
   
   const models: AIModel[] = [];
   for (const r of rows) {
-    const expectedPath = `${MODELS_DIR}${r.id}.gguf`;
+    const ext = r.model_type === 'whisper' ? '.bin' : '.gguf';
+    const expectedPath = `${MODELS_DIR}${r.id}${ext}`;
     const info = await FileSystem.getInfoAsync(expectedPath);
     const exists = info.exists;
     
@@ -68,7 +69,8 @@ export async function downloadModel(
   );
   if (!model) throw new Error(`Model not found: ${modelId}`);
 
-  const filePath = `${MODELS_DIR}${modelId}.gguf`;
+  const ext = model.model_type === 'whisper' ? '.bin' : '.gguf';
+  const filePath = `${MODELS_DIR}${modelId}${ext}`;
 
   // Start download with progress tracking
   const downloadResumable = FileSystem.createDownloadResumable(
