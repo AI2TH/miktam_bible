@@ -42,8 +42,14 @@ export function ChapterView({
     return map;
   }, [bookmarks]);
 
+  const listRef = React.useRef<FlatList>(null);
+  React.useEffect(() => {
+    listRef.current?.scrollToOffset({ offset: 0, animated: false });
+  }, [bookTitle, currentChapter]);
+
   return (
     <FlatList
+      ref={listRef}
       data={verses}
       keyExtractor={(item) => item.id.toString()}
       contentContainerStyle={{ padding: spacing.base, paddingBottom: spacing['4xl'] }}
