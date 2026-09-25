@@ -1,5 +1,14 @@
 import React from 'react';
-import { Modal, View, StyleSheet, TouchableWithoutFeedback, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import {
+  Modal,
+  View,
+  StyleSheet,
+  TouchableWithoutFeedback,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme';
 import { Text } from './Text';
 import { IconButton } from './IconButton';
@@ -18,10 +27,11 @@ export function BottomSheet({
   onClose,
   title,
   children,
-  maxHeight = '80%',
+  maxHeight = '85%',
   scrollable = true,
 }: BottomSheetProps) {
   const { colors, borderRadius, spacing, shadows } = useTheme();
+  const insets = useSafeAreaInsets();
 
   return (
     <Modal
@@ -42,7 +52,7 @@ export function BottomSheet({
                   borderTopLeftRadius: borderRadius.lg,
                   borderTopRightRadius: borderRadius.lg,
                   maxHeight: maxHeight as any,
-                  paddingBottom: spacing.xl,
+                  paddingBottom: Math.max(insets.bottom, 16) + spacing.md,
                 },
                 shadows.lg,
               ]}
