@@ -51,18 +51,21 @@ export default function RecordingsScreen() {
 
   useEffect(() => {
     fetchList();
-    // Poll list status periodically if any recording is transcribing/pending
+  }, []);
+
+  // Poll list status periodically if any recording is transcribing/pending
+  const hasUnfinished = recordings.some(
+    (r) => r.transcriptionStatus === 'pending' || r.transcriptionStatus === 'processing'
+  );
+
+  useEffect(() => {
+    if (!hasUnfinished) return;
     const timer = setInterval(() => {
-      const hasUnfinished = recordings.some(
-        (r) => r.transcriptionStatus === 'pending' || r.transcriptionStatus === 'processing'
-      );
-      if (hasUnfinished) {
-        fetchList();
-      }
+      fetchList();
     }, 3000);
 
     return () => clearInterval(timer);
-  }, [recordings]);
+  }, [hasUnfinished]);
 
   const handleStart = async () => {
     try {

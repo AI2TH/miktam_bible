@@ -103,7 +103,7 @@ export default function BookPickerScreen() {
                       style={[
                         styles.quickChip,
                         {
-                          backgroundColor: isSel ? colors.primary : colors.surfaceVariant,
+                          backgroundColor: isSel ? colors.primary : colors.surfaceMuted,
                           borderRadius: borderRadius.full,
                           paddingHorizontal: spacing.sm + 2,
                           paddingVertical: 3,

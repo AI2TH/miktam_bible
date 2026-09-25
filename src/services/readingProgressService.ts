@@ -13,6 +13,7 @@ export async function markChapterAsRead(
   const db = getDatabase();
   const id = generateUUID();
   const today = format(new Date(), 'yyyy-MM-dd');
+  const normVersion = (versionId || 'kjv').toLowerCase().trim();
 
   // Insert or update progress for today
   await db.runAsync(
@@ -20,23 +21,23 @@ export async function markChapterAsRead(
      VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(version_id, book_number, chapter, read_date)
      DO UPDATE SET reading_time_secs = reading_time_secs + excluded.reading_time_secs`,
-    [id, versionId, bookNumber, chapter, today, readingTimeSecs]
+    [id, normVersion, bookNumber, chapter, today, readingTimeSecs]
   );
 
   // Get final record
   const row = await db.getFirstAsync<any>(
-    'SELECT * FROM reading_progress WHERE version_id = ? AND book_number = ? AND chapter = ? AND read_date = ?',
-    [versionId, bookNumber, chapter, today]
+    'SELECT * FROM reading_progress WHERE LOWER(version_id) = ? AND book_number = ? AND chapter = ? AND read_date = ?',
+    [normVersion, bookNumber, chapter, today]
   );
 
   const record: ReadingProgress = {
-    id: row.id,
-    versionId: row.version_id,
-    bookNumber: row.book_number,
-    chapter: row.chapter,
-    readDate: row.read_date,
-    readingTimeSecs: row.reading_time_secs,
-    isSynced: row.is_synced === 1,
+    id: row?.id || id,
+    versionId: row?.version_id || normVersion,
+    bookNumber: row?.book_number || bookNumber,
+    chapter: row?.chapter || chapter,
+    readDate: row?.read_date || today,
+    readingTimeSecs: row?.reading_time_secs || readingTimeSecs,
+    isSynced: row?.is_synced === 1,
   };
 
   // Add to sync queue
@@ -55,11 +56,12 @@ export async function getReadChaptersForBook(
   bookNumber: number
 ): Promise<{ chapter: number; readDate: string }[]> {
   const db = getDatabase();
+  const normVersion = (versionId || 'kjv').toLowerCase().trim();
   const rows = await db.getAllAsync<any>(
     `SELECT DISTINCT chapter, read_date
      FROM reading_progress
-     WHERE version_id = ? AND book_number = ?`,
-    [versionId, bookNumber]
+     WHERE LOWER(version_id) = ? AND book_number = ?`,
+    [normVersion, bookNumber]
   );
   return rows.map(r => ({
     chapter: r.chapter,

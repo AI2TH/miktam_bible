@@ -19,7 +19,7 @@ import { Button } from '../../src/components/ui/Button';
 import { Text } from '../../src/components/ui/Text';
 import { startOfMonth, endOfMonth, format } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useNavigation } from 'expo-router';
 import { isDatabaseInitialized } from '../../src/services/database';
 
 const CHAPTERS_PER_BOOK: Record<number, number> = {
@@ -34,6 +34,7 @@ const CHAPTERS_PER_BOOK: Record<number, number> = {
 
 export default function CalendarScreen() {
   const { colors, spacing, borderRadius } = useTheme();
+  const navigation = useNavigation();
   const { currentVersionId, navigateTo } = useReaderStore();
 
   const [streak, setStreak] = useState(0);
@@ -102,10 +103,14 @@ export default function CalendarScreen() {
   useEffect(() => {
     let active = true;
     loadProgressAndPromises(active);
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadProgressAndPromises(true);
+    });
     return () => {
       active = false;
+      unsubscribe();
     };
-  }, [currentVersionId]);
+  }, [currentVersionId, navigation]);
 
   const handleOpenSelector = (type: 'monthly' | 'yearly') => {
     setSelectorType(type);
