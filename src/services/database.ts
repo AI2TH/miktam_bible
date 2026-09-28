@@ -104,32 +104,12 @@ export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
   // Open database connection
   db = await SQLite.openDatabaseAsync('bible.db');
 
-  // Verify integrity with quick_check and auto-recover if malformed
+  // Fast non-blocking sanity check (<1ms)
   try {
-    const check = await db.getAllAsync<{ quick_check: string }>('PRAGMA quick_check(1);');
-    if (!check || check.length === 0 || check[0].quick_check !== 'ok') {
-      throw new Error(`Integrity check failed: ${JSON.stringify(check)}`);
-    }
-    console.log('[DB] Database integrity verified: healthy');
-  } catch (corruptErr) {
-    console.error('[DB] Database corrupted on disk! Initiating self-healing re-seed...', corruptErr);
-    try {
-      await db.closeAsync();
-    } catch (_) {}
-    db = null;
-
-    await FileSystem.deleteAsync(dbPath, { idempotent: true });
-    await FileSystem.deleteAsync(`${dbPath}-wal`, { idempotent: true });
-    await FileSystem.deleteAsync(`${dbPath}-shm`, { idempotent: true });
-    await AsyncStorage.removeItem('seeded_bible_db_version');
-
-    const copied = await copySourceDatabase(dbPath);
-    if (copied) {
-      db = await SQLite.openDatabaseAsync('bible.db');
-      console.log('[DB] Database successfully healed and re-opened.');
-    } else {
-      throw new Error('Self-healing failed: could not copy valid database.');
-    }
+    await db.getFirstAsync('SELECT id FROM verses LIMIT 1;');
+    console.log('[DB] Database sanity check verified: healthy');
+  } catch (checkErr) {
+    console.warn('[DB] Database sanity check warning:', checkErr);
   }
 
   // Performance PRAGMAs
@@ -213,34 +193,11 @@ async function syncLocalModels(database: SQLite.SQLiteDatabase): Promise<void> {
       await FileSystem.makeDirectoryAsync(modelsDir, { intermediates: true });
     }
 
-    // Pre-seed the lite model if it's in the native bundle assets
+    // Check if models exist in document directory
     const liteModelPath = `${modelsDir}bibleslm-0.5b-q4.gguf`;
     const liteModelInfo = await FileSystem.getInfoAsync(liteModelPath);
-    if (!liteModelInfo.exists) {
-      console.log('[DB] Pre-packaged lite model (bibleslm-0.5b-q4.gguf) not found in document directory. Checking native assets for seeding...');
-      const possibleModelUris = [
-        `${FileSystem.bundleDirectory || 'asset:/'}bible-q4km.gguf`,
-        'asset:/bible-q4km.gguf',
-        'asset:///bible-q4km.gguf'
-      ];
-      
-      let copiedModel = false;
-      for (const uri of possibleModelUris) {
-        try {
-          console.log('[DB] Attempting to copy model from asset path:', uri);
-          await FileSystem.copyAsync({
-            from: uri,
-            to: liteModelPath
-          });
-          copiedModel = true;
-          console.log(`[DB] Successfully copied prebuilt model from: ${uri}`);
-          break;
-        } catch (copyErr) {
-          console.warn(`[DB] Failed to copy model from ${uri}:`, copyErr);
-        }
-      }
-    } else {
-      console.log(`[DB] Pre-packaged model already exists in document directory (size: ${liteModelInfo.size || 0} bytes)`);
+    if (liteModelInfo.exists) {
+      console.log(`[DB] Pre-packaged model found in document directory (size: ${liteModelInfo.size || 0} bytes)`);
     }
 
     const files = await FileSystem.readDirectoryAsync(modelsDir);
@@ -291,36 +248,18 @@ export function getDatabase(): SQLite.SQLiteDatabase {
  * connection used by the reader, bookmarks, etc.
  */
 export async function initSearchDatabase(): Promise<SQLite.SQLiteDatabase> {
-  if (searchDb) return searchDb;
-
-  searchDb = await SQLite.openDatabaseAsync('bible.db');
-
-  // Same read-performance PRAGMAs used by the main connection.
-  await searchDb.execAsync(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA synchronous = NORMAL;
-    PRAGMA cache_size = 10000;
-    PRAGMA foreign_keys = ON;
-    PRAGMA temp_store = MEMORY;
-  `);
-
-  console.log('[DB] Search database connection opened');
-  isSearchInitialized = true;
-  return searchDb;
+  if (db && isInitialized) {
+    return db;
+  }
+  return await initDatabase();
 }
 
 /**
- * Get the dedicated search database connection.
- * Throws if initDatabase() hasn't been called yet (we need the file seeded first).
+ * Get the unified database connection for search operations.
+ * Throws if initDatabase() hasn't been called yet.
  */
 export function getSearchDatabase(): SQLite.SQLiteDatabase {
-  if (!db || !isInitialized) {
-    throw new Error('Database not initialized. Call initDatabase() first.');
-  }
-  if (!searchDb || !isSearchInitialized) {
-    throw new Error('Search database not initialized. Call initSearchDatabase() first.');
-  }
-  return searchDb;
+  return getDatabase();
 }
 
 /**

@@ -57,6 +57,7 @@ export default function ChapterReaderScreen() {
   const { refs: crossRefs, loadRefs } = useCrossReferences();
 
   // Local component states
+  const [versions, setVersions] = useState<BibleVersion[]>([]);
   const [downloadedVersions, setDownloadedVersions] = useState<BibleVersion[]>([]);
   const [selectedVerse, setSelectedVerse] = useState<number | null>(null);
   const [actionSheetVisible, setActionSheetVisible] = useState(false);
@@ -75,11 +76,16 @@ export default function ChapterReaderScreen() {
   // Load active versions list
   useEffect(() => {
     async function loadVersions() {
-      const all = await getAllVersions();
-      setDownloadedVersions(all.filter((v: BibleVersion) => v.isDownloaded));
+      try {
+        const all = await getAllVersions();
+        setVersions(all);
+        setDownloadedVersions(all.filter((v: BibleVersion) => v.isDownloaded));
+      } catch (e) {
+        console.error('[ChapterScreen] Error loading versions:', e);
+      }
     }
     loadVersions();
-  }, []);
+  }, [currentVersionId]);
 
   // Filter bookmarks for current chapter
   const chapterBookmarks = React.useMemo(() => {
