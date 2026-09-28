@@ -127,8 +127,12 @@ export async function transcribeAudio(
     throw new Error('Whisper model not loaded. Call loadWhisperModel() first.');
   }
 
+  const nativeAudioPath = audioFilePath.startsWith('file://')
+    ? audioFilePath.replace('file://', '')
+    : audioFilePath;
+
   try {
-    const task = context.transcribe(audioFilePath, {
+    const task = context.transcribe(nativeAudioPath, {
       language: 'en',
       maxLen: 0,
       tokenTimestamps: false,

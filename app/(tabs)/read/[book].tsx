@@ -24,7 +24,8 @@ export default function BookChaptersScreen() {
   const { book } = useLocalSearchParams<{ book: string }>();
   const { currentVersionId } = useReaderStore();
 
-  const bookNumber = parseInt(book || '1');
+  const parsedBook = parseInt(Array.isArray(book) ? book[0] : (book || '1'));
+  const bookNumber = isNaN(parsedBook) ? 1 : Math.max(1, Math.min(66, parsedBook));
   const bookName = getBookName(bookNumber, currentVersionId);
   const totalChapters = CHAPTERS_PER_BOOK[bookNumber] || 1;
 

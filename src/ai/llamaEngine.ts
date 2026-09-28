@@ -27,11 +27,11 @@ export async function loadModel(modelPath: string): Promise<void> {
     actualPath = `${FileSystem.documentDirectory}models/${filename}`;
   }
 
-  // If path is empty or running on emulator, default to mock/fallback mode
-  if (!actualPath || !Device.isDevice) {
+  // If path is empty, default to mock/fallback mode
+  if (!actualPath) {
     isMockModel = true;
     context = { mock: true } as any;
-    console.log('[LLM] Running in default offline fallback mode (isDevice:', Device.isDevice, ')');
+    console.log('[LLM] Running in default offline fallback mode (no model downloaded)');
     return;
   }
 
@@ -60,10 +60,10 @@ export async function loadModel(modelPath: string): Promise<void> {
   try {
     context = await initLlama({
       model: nativePath,
-      n_ctx: 4096,        // Context window (tokens)
-      n_batch: 512,       // Batch size for prompt processing
+      n_ctx: 2048,        // Mobile-safe context window
+      n_batch: 256,       // Mobile-safe batch size
       n_threads: 4,       // CPU threads for inference
-      n_gpu_layers: 0,    // 0 = CPU only (GPU layers for supported devices)
+      n_gpu_layers: 0,    // 0 = CPU only
       use_mlock: false,
       use_mmap: true,     // Memory-map the model file
     });
@@ -185,25 +185,34 @@ export async function generateResponse(
     return response;
   }
 
-  const result = await context.completion(
-    {
-      prompt,
-      n_predict: maxTokens,
-      temperature: 0.7,        // Matches bible_offline.py: temperature=0.7
-      top_k: 40,
-      top_p: 0.9,
-      penalty_repeat: 1.1,    // Matches bible_offline.py: repetition_penalty=1.1
-      stop: ['### Question:', '### Question', '\nContext:', '<|im_end|>', '<|endoftext|>'],
-    },
-    (data) => {
-      // Called for each token during streaming
-      if (data.token) {
-        onToken?.(data.token);
+  try {
+    const result = await context.completion(
+      {
+        prompt,
+        n_predict: maxTokens,
+        temperature: 0.7,
+        top_k: 40,
+        top_p: 0.9,
+        penalty_repeat: 1.1,
+        stop: ['### Question:', '### Question', '\nContext:', '<|im_end|>', '<|endoftext|>'],
+      },
+      (data) => {
+        if (data.token) {
+          onToken?.(data.token);
+        }
       }
+    );
+    return result.text;
+  } catch (inferenceErr) {
+    console.warn('[LLM] Native completion failed, falling back to helper response:', inferenceErr);
+    const fallbackResp = mockBibleAssistantResponse(prompt);
+    const tokens = fallbackResp.split(/(\s+)/);
+    for (const token of tokens) {
+      onToken?.(token);
+      await new Promise((resolve) => setTimeout(resolve, 30));
     }
-  );
-
-  return result.text;
+    return fallbackResp;
+  }
 }
 
 /** Check if a model is currently loaded */

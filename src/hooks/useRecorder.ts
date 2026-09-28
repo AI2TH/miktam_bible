@@ -37,6 +37,7 @@ export function useRecorder() {
   const [durationSecs, setDurationSecs] = useState(0);
   const [transcribing, setTranscribing] = useState(false);
   const timerRef = useRef<any>(null);
+  const startTimeRef = useRef<number>(0);
   const mountedRef = useRef(true); // Guard against state updates after unmount
 
   const recorder = useAudioRecorder(RECORDING_OPTIONS_16KHZ_MONO);
@@ -46,8 +47,15 @@ export function useRecorder() {
     return () => {
       mountedRef.current = false;
       if (timerRef.current) clearInterval(timerRef.current);
+      try {
+        if (recorder.isRecording) {
+          recorder.stop().catch(() => {});
+        }
+      } catch (e) {
+        // safe ignore on unmount
+      }
     };
-  }, []);
+  }, [recorder]);
 
   const startRecording = useCallback(async () => {
     try {
@@ -59,12 +67,14 @@ export function useRecorder() {
       await recorder.prepareToRecordAsync();
       recorder.record();
 
+      startTimeRef.current = Date.now();
       setIsRecording(true);
       setDurationSecs(0);
 
       if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = setInterval(() => {
-        setDurationSecs((prev) => prev + 1);
+        const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+        setDurationSecs(elapsed);
       }, 1000);
     } catch (e) {
       console.error('[useRecorder] Failed to start recording:', e);
@@ -139,10 +149,14 @@ export function useRecorder() {
     try {
       await recorder.stop();
       const uri = recorder.uri || '';
-      const finalDuration = durationSecs;
+      const calculatedDuration = startTimeRef.current > 0 
+        ? Math.max(1, Math.round((Date.now() - startTimeRef.current) / 1000))
+        : durationSecs;
+      const finalDuration = calculatedDuration;
 
       setIsRecording(false);
       setDurationSecs(0);
+      startTimeRef.current = 0;
 
       // Log metadata to local SQLite
       const record = await recordingService.addRecording(
