@@ -1,7 +1,8 @@
 import React from 'react';
-import { FlatList, StyleSheet, View } from 'react-native';
+import { FlatList, StyleSheet, View, TouchableOpacity } from 'react-native';
 import { useTheme } from '../../theme';
 import { VerseText } from './VerseText';
+import { Text } from '../ui/Text';
 import type { Verse } from '../../types/bible';
 import type { Bookmark } from '../../types/user';
 
