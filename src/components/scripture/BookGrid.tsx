@@ -123,6 +123,7 @@ const styles = StyleSheet.create({
   },
   gridContainer: {
     flexGrow: 1,
+    paddingBottom: 40,
   },
   grid: {
     flexDirection: 'row',

@@ -50,7 +50,7 @@ export default function RootLayout() {
     }
   }, [fontsLoaded, fontError, dbInitialized]);
 
-  if (!fontsLoaded && !fontError) {
+  if ((!fontsLoaded && !fontError) || !dbInitialized) {
     return null;
   }
 
