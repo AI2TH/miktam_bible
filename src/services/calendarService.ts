@@ -26,7 +26,7 @@ export async function getPromiseVerse(
   preferredVersionId?: string
 ): Promise<PromiseVerseInfo | null> {
   const db = getDatabase();
-  const prefVer = preferredVersionId || 'kjv';
+  const prefVer = (preferredVersionId || 'kjv').toLowerCase().trim();
   try {
     const row = await db.getFirstAsync<any>(
       `SELECT vc.*, 
@@ -34,29 +34,29 @@ export async function getPromiseVerse(
               COALESCE(b_pref.name, b_saved.name, b_kjv.name, b_bbe.name) AS book_name,
               COALESCE(v_pref.version_id, v_saved.version_id, v_kjv.version_id, v_bbe.version_id) AS matched_version_id
        FROM verse_calendar vc
-       LEFT JOIN verses v_pref ON v_pref.version_id = ?
+       LEFT JOIN verses v_pref ON LOWER(v_pref.version_id) = ?
          AND vc.book_number = v_pref.book_number 
          AND vc.chapter = v_pref.chapter 
          AND vc.verse_number = v_pref.verse_number
-       LEFT JOIN books b_pref ON b_pref.version_id = ?
+       LEFT JOIN books b_pref ON LOWER(b_pref.version_id) = ?
          AND vc.book_number = b_pref.book_number
-       LEFT JOIN verses v_saved ON v_saved.version_id = vc.version_id 
+       LEFT JOIN verses v_saved ON LOWER(v_saved.version_id) = LOWER(vc.version_id) 
          AND vc.book_number = v_saved.book_number 
          AND vc.chapter = v_saved.chapter 
          AND vc.verse_number = v_saved.verse_number
-       LEFT JOIN books b_saved ON b_saved.version_id = vc.version_id 
+       LEFT JOIN books b_saved ON LOWER(b_saved.version_id) = LOWER(vc.version_id) 
          AND vc.book_number = b_saved.book_number
-       LEFT JOIN verses v_kjv ON v_kjv.version_id = 'kjv' 
+       LEFT JOIN verses v_kjv ON LOWER(v_kjv.version_id) = 'kjv' 
          AND vc.book_number = v_kjv.book_number 
          AND vc.chapter = v_kjv.chapter 
          AND vc.verse_number = v_kjv.verse_number
-       LEFT JOIN books b_kjv ON b_kjv.version_id = 'kjv' 
+       LEFT JOIN books b_kjv ON LOWER(b_kjv.version_id) = 'kjv' 
          AND vc.book_number = b_kjv.book_number
-       LEFT JOIN verses v_bbe ON v_bbe.version_id = 'bbe' 
+       LEFT JOIN verses v_bbe ON LOWER(v_bbe.version_id) = 'bbe' 
          AND vc.book_number = v_bbe.book_number 
          AND vc.chapter = v_bbe.chapter 
          AND vc.verse_number = v_bbe.verse_number
-       LEFT JOIN books b_bbe ON b_bbe.version_id = 'bbe' 
+       LEFT JOIN books b_bbe ON LOWER(b_bbe.version_id) = 'bbe' 
          AND vc.book_number = b_bbe.book_number
        WHERE vc.calendar_type = ? AND vc.target_date = ?
        ORDER BY vc.created_at DESC
@@ -99,6 +99,7 @@ export async function savePromiseVerse(
 ): Promise<void> {
   const db = getDatabase();
   const id = generateUUID();
+  const normVersion = (versionId || 'kjv').toLowerCase().trim();
   try {
     // 1. Delete existing promise verse for this type and target date to prevent duplicates
     await db.runAsync(
@@ -110,14 +111,14 @@ export async function savePromiseVerse(
     await db.runAsync(
       `INSERT INTO verse_calendar (id, source, version_id, book_number, chapter, verse_number, calendar_type, target_date)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, source, versionId, bookNumber, chapter, verseNumber, calendarType, targetDate]
+      [id, source, normVersion, bookNumber, chapter, verseNumber, calendarType, targetDate]
     );
 
     // 3. Add to sync queue for offline sync support
     const payload = {
       id,
       source,
-      versionId,
+      versionId: normVersion,
       bookNumber,
       chapter,
       verseNumber,
