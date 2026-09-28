@@ -186,8 +186,8 @@ export function VersionPicker({
                   style={[
                     styles.langBadge,
                     {
-                      backgroundColor: colors.surfaceVariant,
-                      borderRadius: borderRadius.xs,
+                      backgroundColor: colors.surfaceMuted,
+                      borderRadius: borderRadius.sm,
                       paddingHorizontal: spacing.xs + 2,
                       paddingVertical: 2,
                     },
@@ -258,7 +258,7 @@ export function VersionPicker({
                 <View
                   style={[
                     styles.progressBarTrack,
-                    { backgroundColor: colors.border, borderRadius: borderRadius.xs },
+                    { backgroundColor: colors.border, borderRadius: borderRadius.sm },
                   ]}
                 >
                   <View
@@ -267,7 +267,7 @@ export function VersionPicker({
                       {
                         backgroundColor: colors.primary,
                         width: `${downloadState?.percent ?? 0}%`,
-                        borderRadius: borderRadius.xs,
+                        borderRadius: borderRadius.sm,
                       },
                     ]}
                   />
@@ -330,7 +330,7 @@ export function VersionPicker({
             style={[
               styles.countPill,
               {
-                backgroundColor: isSelected ? colors.primary : colors.surfaceVariant,
+                backgroundColor: isSelected ? colors.primary : colors.surfaceMuted,
                 borderRadius: borderRadius.full,
                 paddingHorizontal: spacing.sm,
                 paddingVertical: 2,
@@ -358,7 +358,7 @@ export function VersionPicker({
         style={[
           styles.searchBar,
           {
-            backgroundColor: colors.surfaceVariant,
+            backgroundColor: colors.surfaceMuted,
             borderColor: colors.border,
             borderRadius: borderRadius.md,
             paddingHorizontal: spacing.md,
@@ -473,7 +473,7 @@ export function VersionPicker({
             maxToRenderPerBatch={20}
             windowSize={7}
             removeClippedSubviews={true}
-            contentContainerStyle={{ paddingBottom: spacing.xxl }}
+            contentContainerStyle={{ paddingBottom: spacing['2xl'] }}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <Text variant="body" color="textSecondary">
@@ -491,7 +491,7 @@ export function VersionPicker({
             maxToRenderPerBatch={25}
             windowSize={7}
             removeClippedSubviews={true}
-            contentContainerStyle={{ paddingBottom: spacing.xxl }}
+            contentContainerStyle={{ paddingBottom: spacing['2xl'] }}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <Text variant="body" color="textSecondary">

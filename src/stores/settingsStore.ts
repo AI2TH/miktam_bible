@@ -29,8 +29,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     set({ themeMode: mode });
   },
   setPreferredVersion: (version) => {
-    storage.set('preferredVersion', version);
-    set({ preferredVersion: version });
+    const norm = (version || 'kjv').toLowerCase().trim();
+    storage.set('preferredVersion', norm);
+    set({ preferredVersion: norm });
   },
   setPreferredLanguage: (lang) => {
     storage.set('preferredLanguage', lang);

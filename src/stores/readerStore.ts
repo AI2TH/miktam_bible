@@ -48,7 +48,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   showParallelView: false,
   parallelVersionId: null,
 
-  setVersion: (versionId) => set({ currentVersionId: versionId }),
+  setVersion: (versionId) => set({ currentVersionId: (versionId || 'kjv').toLowerCase().trim() }),
 
   navigateTo: (bookNumber, chapter) => set({
     currentBookNumber: bookNumber,

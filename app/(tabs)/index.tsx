@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useNavigation } from 'expo-router';
 import { useTheme } from '../../src/theme';
 import { Text } from '../../src/components/ui/Text';
 import { Card } from '../../src/components/ui/Card';
@@ -17,6 +17,7 @@ import { isDatabaseInitialized } from '../../src/services/database';
 
 export default function HomeScreen() {
   const { colors, spacing, borderRadius } = useTheme();
+  const navigation = useNavigation();
   const { currentBookNumber, currentChapter, currentVersionId, navigateTo } = useReaderStore();
   
   const [streak, setStreak] = useState(0);
@@ -62,10 +63,14 @@ export default function HomeScreen() {
       }
     }
     loadHomeData();
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadHomeData();
+    });
     return () => {
       active = false;
+      unsubscribe();
     };
-  }, [currentVersionId]);
+  }, [currentVersionId, navigation]);
 
   const handleContinueReading = () => {
     router.push({
