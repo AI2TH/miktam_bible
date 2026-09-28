@@ -1,38 +1,41 @@
 import { initSearchDatabase } from '../services/database';
 
 let dictionary: string[] | null = null;
+let dictionarySet: Set<string> | null = null;
 
-// Standard Levenshtein distance
+// Standard Levenshtein distance with 2-row memory optimization
 function levenshtein(a: string, b: string): number {
   if (a.length === 0) return b.length;
   if (b.length === 0) return a.length;
 
-  const matrix = [];
+  let prevRow = new Array(b.length + 1);
+  let currRow = new Array(b.length + 1);
 
-  for (let i = 0; i <= b.length; i++) {
-    matrix[i] = [i];
-  }
-  for (let j = 0; j <= a.length; j++) {
-    matrix[0][j] = j;
+  for (let j = 0; j <= b.length; j++) {
+    prevRow[j] = j;
   }
 
-  for (let i = 1; i <= b.length; i++) {
-    for (let j = 1; j <= a.length; j++) {
-      if (b.charAt(i - 1) === a.charAt(j - 1)) {
-        matrix[i][j] = matrix[i - 1][j - 1];
+  for (let i = 1; i <= a.length; i++) {
+    currRow[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      if (a.charAt(i - 1) === b.charAt(j - 1)) {
+        currRow[j] = prevRow[j - 1];
       } else {
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j - 1] + 1, // substitution
+        currRow[j] = Math.min(
+          prevRow[j - 1] + 1, // substitution
           Math.min(
-            matrix[i][j - 1] + 1, // insertion
-            matrix[i - 1][j] + 1 // deletion
+            currRow[j - 1] + 1, // insertion
+            prevRow[j] + 1     // deletion
           )
         );
       }
     }
+    for (let j = 0; j <= b.length; j++) {
+      prevRow[j] = currRow[j];
+    }
   }
 
-  return matrix[b.length][a.length];
+  return prevRow[b.length];
 }
 
 export async function initDictionary() {
@@ -42,18 +45,20 @@ export async function initDictionary() {
     // Only load English words for now
     const rows = await db.getAllAsync<{ word: string }>('SELECT word FROM concordance_index WHERE lang = "en"');
     dictionary = rows.map(r => r.word.toLowerCase());
+    dictionarySet = new Set(dictionary);
   } catch (e) {
     console.warn("[SpellChecker] Could not load dictionary", e);
     dictionary = [];
+    dictionarySet = new Set();
   }
 }
 
 export async function correctWord(word: string): Promise<string> {
-  if (!dictionary) await initDictionary();
+  if (!dictionary || !dictionarySet) await initDictionary();
   const lowerWord = word.toLowerCase();
   
-  // If exact match exists, return it
-  if (dictionary!.includes(lowerWord)) {
+  // O(1) exact match check
+  if (dictionarySet!.has(lowerWord)) {
     return word;
   }
 

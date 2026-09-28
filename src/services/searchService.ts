@@ -73,10 +73,10 @@ export async function searchFTS(
   const cleanQuery = query.replace(/['\"*]/g, '').trim();
   if (!cleanQuery) return [];
 
-  // Split query into keywords
+  // Split query into keywords (support unicode characters for multi-language & original texts)
   let words = cleanQuery
     .split(/\s+/)
-    .map(w => w.replace(/[^a-zA-Z0-9]/g, '').toLowerCase())
+    .map(w => w.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()\[\]<>?@+]/g, '').toLowerCase())
     .filter(w => w.length > 0);
 
   if (words.length === 0) return [];

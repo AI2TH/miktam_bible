@@ -22,6 +22,8 @@ export default function RootLayout() {
     'SourceSerif4-SemiBold': require('../assets/fonts/SourceSerif4-SemiBold.ttf'),
   });
 
+  const [initError, setInitError] = useState<string | null>(null);
+
   useEffect(() => {
     console.log('[RootLayout] Initializing database and storage...');
     async function init() {
@@ -31,8 +33,10 @@ export default function RootLayout() {
         await initDatabase();
         console.log('[RootLayout] Database and storage initialization complete');
         setDbInitialized(true);
-      } catch (e) {
+      } catch (e: any) {
         console.error('[RootLayout] Initialization failed:', e);
+        setInitError(e?.message || 'Failed to initialize database');
+        setDbInitialized(true); // Allow app to mount error view
       }
     }
     init();
@@ -40,13 +44,13 @@ export default function RootLayout() {
 
   useEffect(() => {
     console.log('[RootLayout] Status changed:', { fontsLoaded, fontError, dbInitialized });
-    if (fontsLoaded && dbInitialized) {
+    if ((fontsLoaded || fontError) && dbInitialized) {
       console.log('[RootLayout] Hiding splash screen');
-      SplashScreen.hideAsync();
+      SplashScreen.hideAsync().catch(() => {});
     }
   }, [fontsLoaded, fontError, dbInitialized]);
 
-  if (!fontsLoaded || !dbInitialized) {
+  if (!fontsLoaded && !fontError) {
     return null;
   }
 

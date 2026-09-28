@@ -2,6 +2,15 @@ import { getDatabase } from './database';
 import { BOOK_NAMES } from '../utils/constants';
 import type { OriginalWord, StrongsEntry, CrossReferenceWithText } from '../types/concordance';
 
+function safeJsonParse<T>(jsonStr: any, fallback: T): T {
+  if (!jsonStr || typeof jsonStr !== 'string') return fallback;
+  try {
+    return JSON.parse(jsonStr) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 // ─── INTERLINEAR (Word-by-Word) ──────────────────
 
 /**
@@ -30,7 +39,7 @@ export async function getOriginalWords(
     transliteration: r.transliteration,
     strongsNumber: r.strongs_number,
     language: r.language,
-    morphology: r.morphology ? JSON.parse(r.morphology) : null,
+    morphology: safeJsonParse(r.morphology, null),
     gloss: r.gloss,
   }));
 }
@@ -54,7 +63,7 @@ export async function getStrongsEntry(strongsNumber: string): Promise<StrongsEnt
     definition: row.definition,
     shortDefinition: row.short_definition || '',
     usageCount: row.usage_count,
-    kjvTranslations: row.kjv_translations ? JSON.parse(row.kjv_translations) : [],
+    kjvTranslations: safeJsonParse(row.kjv_translations, []),
   };
 }
 
@@ -91,7 +100,7 @@ export async function searchStrongs(query: string): Promise<StrongsEntry[]> {
         definition: row.definition,
         shortDefinition: row.short_definition || '',
         usageCount: row.usage_count,
-        kjvTranslations: row.kjv_translations ? JSON.parse(row.kjv_translations) : [],
+        kjvTranslations: safeJsonParse(row.kjv_translations, []),
       }];
     }
   }
@@ -113,13 +122,17 @@ export async function searchStrongs(query: string): Promise<StrongsEntry[]> {
         definition: row.definition,
         shortDefinition: row.short_definition || '',
         usageCount: row.usage_count,
-        kjvTranslations: row.kjv_translations ? JSON.parse(row.kjv_translations) : [],
+        kjvTranslations: safeJsonParse(row.kjv_translations, []),
       }));
     }
   }
 
   // Case 3: Regular text FTS match in definitions + KJV translations UNION
-  const likePattern = `%"${query.toLowerCase()}"%`;
+  const cleanQuery = query.replace(/['\"*]/g, '').trim();
+  if (!cleanQuery) return [];
+
+  const likePattern = `%"${cleanQuery.toLowerCase()}"%`;
+  const ftsMatch = `"${cleanQuery}"*`;
   const rows = await db.getAllAsync<any>(
     `SELECT sd.*, 1 as is_kjv_match, 0 as fts_rank
      FROM strongs_dictionary sd
@@ -137,7 +150,7 @@ export async function searchStrongs(query: string): Promise<StrongsEntry[]> {
 
      ORDER BY is_kjv_match DESC, fts_rank
      LIMIT 500`,
-    [likePattern, query, likePattern]
+    [likePattern, ftsMatch, likePattern]
   );
 
   return rows.map((r: any) => ({
@@ -149,7 +162,7 @@ export async function searchStrongs(query: string): Promise<StrongsEntry[]> {
     definition: r.definition,
     shortDefinition: r.short_definition || '',
     usageCount: r.usage_count,
-    kjvTranslations: r.kjv_translations ? JSON.parse(r.kjv_translations) : [],
+    kjvTranslations: safeJsonParse(r.kjv_translations, []),
   }));
 }
 

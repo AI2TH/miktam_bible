@@ -21,7 +21,7 @@ import { useBookmarks } from '../../../../src/hooks/useBookmarks';
 import { useNotes } from '../../../../src/hooks/useNotes';
 import { useConcordance } from '../../../../src/hooks/useConcordance';
 import { useCrossReferences } from '../../../../src/hooks/useCrossReferences';
-import { useReaderStore } from '../../../../src/stores/readerStore';
+import { useReaderStore, CHAPTERS_PER_BOOK } from '../../../../src/stores/readerStore';
 import { markChapterAsRead } from '../../../../src/services/readingProgressService';
 import { BOOK_NAMES } from '../../../../src/utils/constants';
 import { getBookName } from '../../../../src/utils/bookTranslations';
@@ -33,8 +33,11 @@ import { Ionicons } from '@expo/vector-icons';
 export default function ChapterReaderScreen() {
   const { colors, spacing, borderRadius } = useTheme();
   const { book, chapter } = useLocalSearchParams<{ book: string; chapter: string }>();
-  const bookNumber = parseInt(book || '1');
-  const chapterNumber = parseInt(chapter || '1');
+  const parsedBook = parseInt(Array.isArray(book) ? book[0] : (book || '1'));
+  const bookNumber = isNaN(parsedBook) ? 1 : Math.max(1, Math.min(66, parsedBook));
+  const maxChapters = CHAPTERS_PER_BOOK[bookNumber] || 50;
+  const parsedChapter = parseInt(Array.isArray(chapter) ? chapter[0] : (chapter || '1'));
+  const chapterNumber = isNaN(parsedChapter) ? 1 : Math.max(1, Math.min(maxChapters, parsedChapter));
 
   // Zustand Store sync
   const { navigateTo, currentVersionId, fontSize, setFontSize, setVersion, currentBookNumber, currentChapter } = useReaderStore();
@@ -186,27 +189,34 @@ export default function ChapterReaderScreen() {
           <View style={styles.headerRight}>
             <TouchableOpacity 
               onPress={() => setVersionSheetVisible(true)}
-              style={{ marginRight: spacing.sm, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: colors.surface, borderRadius: 4, borderWidth: 1, borderColor: colors.border }}
+              style={[
+                styles.versionBadge,
+                { backgroundColor: colors.surface, borderColor: colors.border }
+              ]}
             >
-              <Text variant="caption" color="primary" style={{ fontWeight: 'bold' }}>
-                {downloadedVersions.find(v => v.id === currentVersionId)?.language.toUpperCase() || 'EN'} • {(currentVersionId || 'KJV').toUpperCase()}
+              <Text variant="caption" color="primary" style={styles.versionBadgeText}>
+                {(currentVersionId || 'KJV').toUpperCase()}
               </Text>
             </TouchableOpacity>
-            <IconButton
-              onPress={() => setFontSize(fontSize - 2)}
-              size={32}
-              backgroundColor="transparent"
-              icon={<Ionicons name="remove" size={18} color={colors.primary} />}
-            />
-            <Text variant="caption" color="textSecondary" style={styles.fontSizeText}>
-              A
-            </Text>
-            <IconButton
-              onPress={() => setFontSize(fontSize + 2)}
-              size={32}
-              backgroundColor="transparent"
-              icon={<Ionicons name="add" size={18} color={colors.primary} />}
-            />
+            <View style={[styles.fontControlGroup, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+              <TouchableOpacity
+                onPress={() => setFontSize(Math.max(12, fontSize - 2))}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
+                style={styles.fontBtn}
+              >
+                <Ionicons name="remove" size={16} color={colors.primary} />
+              </TouchableOpacity>
+              <Text variant="caption" color="textSecondary" style={styles.fontSizeText}>
+                A
+              </Text>
+              <TouchableOpacity
+                onPress={() => setFontSize(Math.min(32, fontSize + 2))}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+                style={styles.fontBtn}
+              >
+                <Ionicons name="add" size={16} color={colors.primary} />
+              </TouchableOpacity>
+            </View>
           </View>
         }
       />
@@ -219,6 +229,34 @@ export default function ChapterReaderScreen() {
         onVerseTap={handleVerseTap}
         onVerseLongPress={handleVerseLongPress}
         fontSize={fontSize}
+        onNextChapter={() => {
+          const maxChapters = CHAPTERS_PER_BOOK[currentBookNumber] || 50;
+          if (currentChapter < maxChapters) {
+            router.replace({
+              pathname: '/(tabs)/read/[book]/[chapter]',
+              params: { book: currentBookNumber.toString(), chapter: (currentChapter + 1).toString() },
+            });
+          } else if (currentBookNumber < 66) {
+            router.replace({
+              pathname: '/(tabs)/read/[book]/[chapter]',
+              params: { book: (currentBookNumber + 1).toString(), chapter: '1' },
+            });
+          }
+        }}
+        onPrevChapter={() => {
+          if (currentChapter > 1) {
+            router.replace({
+              pathname: '/(tabs)/read/[book]/[chapter]',
+              params: { book: currentBookNumber.toString(), chapter: (currentChapter - 1).toString() },
+            });
+          } else if (currentBookNumber > 1) {
+            const prevBookChapters = CHAPTERS_PER_BOOK[currentBookNumber - 1] || 1;
+            router.replace({
+              pathname: '/(tabs)/read/[book]/[chapter]',
+              params: { book: (currentBookNumber - 1).toString(), chapter: prevBookChapters.toString() },
+            });
+          }
+        }}
       />
 
       {/* Main Long Press Verse Actions BottomSheet */}
@@ -363,17 +401,18 @@ export default function ChapterReaderScreen() {
         visible={versionSheetVisible}
         onClose={() => setVersionSheetVisible(false)}
         title="Select Translation"
+        maxHeight="88%"
+        scrollable={false}
       >
-        <View style={{ paddingVertical: spacing.md, flexWrap: 'wrap', flexDirection: 'row' }}>
-          <VersionPicker
-            versions={downloadedVersions}
-            selectedVersionId={currentVersionId || 'kjv'}
-            onSelectVersion={(v) => {
-              setVersion(v);
-              setVersionSheetVisible(false);
-            }}
-          />
-        </View>
+        <VersionPicker
+          versions={versions}
+          selectedVersionId={currentVersionId || 'kjv'}
+          onSelectVersion={(v) => {
+            setVersion(v);
+            setVersionSheetVisible(false);
+          }}
+          onClose={() => setVersionSheetVisible(false)}
+        />
       </BottomSheet>
     </SafeAreaView>
   );
@@ -386,9 +425,34 @@ const styles = StyleSheet.create({
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+  },
+  versionBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  versionBadgeText: {
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  fontControlGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 6,
+    borderWidth: 1,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  fontBtn: {
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   fontSizeText: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: 'bold',
     marginHorizontal: 4,
   },
