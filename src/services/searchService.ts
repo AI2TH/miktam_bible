@@ -68,6 +68,7 @@ export async function searchFTS(
   isRag: boolean = false,
   offset: number = 0
 ): Promise<SearchResult[]> {
+  const normVersion = (versionId || 'kjv').toLowerCase().trim();
   const db = await initSearchDatabase();
 
   // Clean query for FTS MATCH syntax
@@ -101,10 +102,10 @@ export async function searchFTS(
       `SELECT v.id, v.version_id, v.book_number, v.chapter, v.verse_number, v.text, f.rank
        FROM verses_fts f
        JOIN verses v ON v.id = f.rowid
-       WHERE f.verses_fts MATCH ? AND v.version_id = ? AND v.book_number <= 66
+       WHERE f.verses_fts MATCH ? AND LOWER(v.version_id) = ? AND v.book_number <= 66
        ORDER BY f.rank
        LIMIT ? OFFSET ?`,
-      [ftsQuery, versionId, Number(limit), Number(offset)]
+      [ftsQuery, normVersion, Number(limit), Number(offset)]
     );
 
     // Fallback to OR for RAG
@@ -120,10 +121,10 @@ export async function searchFTS(
         `SELECT v.id, v.version_id, v.book_number, v.chapter, v.verse_number, v.text, f.rank
          FROM verses_fts f
          JOIN verses v ON v.id = f.rowid
-         WHERE f.verses_fts MATCH ? AND v.version_id = ? AND v.book_number <= 66
+         WHERE f.verses_fts MATCH ? AND LOWER(v.version_id) = ? AND v.book_number <= 66
          ORDER BY f.rank
          LIMIT ? OFFSET ?`,
-        [ftsQuery, versionId, Number(limit), Number(offset)]
+        [ftsQuery, normVersion, Number(limit), Number(offset)]
       );
     }
   } else {
@@ -135,10 +136,10 @@ export async function searchFTS(
         `SELECT v.id, v.version_id, v.book_number, v.chapter, v.verse_number, v.text, f.rank
          FROM verses_fts f
          JOIN verses v ON v.id = f.rowid
-         WHERE f.verses_fts MATCH ? AND v.version_id = ? AND v.book_number <= 66
+         WHERE f.verses_fts MATCH ? AND LOWER(v.version_id) = ? AND v.book_number <= 66
          ORDER BY f.rank
          LIMIT ? OFFSET ?`,
-        [`"${cleanQuery}"`, versionId, Number(limit), Number(offset)]
+        [`"${cleanQuery}"`, normVersion, Number(limit), Number(offset)]
       );
     }
 
@@ -149,10 +150,10 @@ export async function searchFTS(
         `SELECT v.id, v.version_id, v.book_number, v.chapter, v.verse_number, v.text, f.rank
          FROM verses_fts f
          JOIN verses v ON v.id = f.rowid
-         WHERE f.verses_fts MATCH ? AND v.version_id = ? AND v.book_number <= 66
+         WHERE f.verses_fts MATCH ? AND LOWER(v.version_id) = ? AND v.book_number <= 66
          ORDER BY f.rank
          LIMIT ? OFFSET ?`,
-        [andQuery, versionId, Number(limit), Number(offset)]
+        [andQuery, normVersion, Number(limit), Number(offset)]
       );
 
       const existingIds = new Set(rows.map(r => r.id));
@@ -170,10 +171,10 @@ export async function searchFTS(
         `SELECT v.id, v.version_id, v.book_number, v.chapter, v.verse_number, v.text, f.rank
          FROM verses_fts f
          JOIN verses v ON v.id = f.rowid
-         WHERE f.verses_fts MATCH ? AND v.version_id = ? AND v.book_number <= 66
+         WHERE f.verses_fts MATCH ? AND LOWER(v.version_id) = ? AND v.book_number <= 66
          ORDER BY f.rank
          LIMIT ? OFFSET ?`,
-        [orQuery, versionId, Number(limit), Number(offset)]
+        [orQuery, normVersion, Number(limit), Number(offset)]
       );
 
       const existingIds = new Set(rows.map(r => r.id));
@@ -197,7 +198,7 @@ export async function searchFTS(
         verseNumber: r.verse_number,
         text: cleanText,
       },
-      bookName: getBookName(r.book_number, versionId) || BOOK_NAMES[r.book_number] || `Book ${r.book_number}`,
+      bookName: getBookName(r.book_number, normVersion) || BOOK_NAMES[r.book_number] || `Book ${r.book_number}`,
       score: Math.abs(r.rank || 0),
       snippet: cleanText.substring(0, 150),
       source: 'fts' as const,
@@ -215,8 +216,9 @@ export async function hybridSearch(
   versionId: string,
   topK: number = 10
 ): Promise<SearchResult[]> {
+  const normVersion = (versionId || 'kjv').toLowerCase().trim();
   // Step 1: FTS5 results
-  const ftsResults = await searchFTS(query, versionId, 20, true);
+  const ftsResults = await searchFTS(query, normVersion, 20, true);
 
   // Step 2: Vector similarity results (sqlite-vec)
   let vectorResults: SearchResult[] = [];
@@ -227,15 +229,15 @@ export async function hybridSearch(
         `SELECT v.id, v.version_id, v.book_number, v.chapter, v.verse_number, v.text,
                 ve.distance
          FROM verse_embeddings ve
-         JOIN verses v ON v.version_id = ve.version_id
+         JOIN verses v ON LOWER(v.version_id) = LOWER(ve.version_id)
            AND v.book_number = ve.book_number
            AND v.chapter = ve.chapter
            AND v.verse_number = ve.verse_number
-         WHERE ve.version_id = ?
+         WHERE LOWER(ve.version_id) = ?
            AND ve.embedding MATCH ?
          ORDER BY ve.distance
          LIMIT 20`,
-        [versionId, JSON.stringify(queryEmbedding)]
+        [normVersion, JSON.stringify(queryEmbedding)]
       );
 
       vectorResults = vectorRows.map((r: any) => ({
@@ -247,7 +249,7 @@ export async function hybridSearch(
           verseNumber: r.verse_number,
           text: r.text,
         },
-        bookName: getBookName(r.book_number, versionId) || BOOK_NAMES[r.book_number] || `Book ${r.book_number}`,
+        bookName: getBookName(r.book_number, normVersion) || BOOK_NAMES[r.book_number] || `Book ${r.book_number}`,
         score: 1 - r.distance, // Convert distance to similarity
         snippet: r.text.substring(0, 100),
         source: 'vector' as const,

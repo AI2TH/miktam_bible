@@ -14,6 +14,7 @@ import { cleanVerseText, formatScriptureRef } from '../../src/utils/bibleUtils';
 import { getBookName } from '../../src/utils/bookTranslations';
 import { Ionicons } from '@expo/vector-icons';
 import { isDatabaseInitialized } from '../../src/services/database';
+import { loadVerseOfTheDay } from '../../src/services/verseOfTheDayService';
 
 export default function HomeScreen() {
   const { colors, spacing, borderRadius } = useTheme();
@@ -46,17 +47,10 @@ export default function HomeScreen() {
         const progressStats = await getReadingStats();
         if (active) setStats(progressStats);
 
-        // Fetch John 3:16 as default VOTD. If downloaded, get actual translation text.
-        const dbVerse = await getVerse(currentVersionId, 43, 3, 16);
-        if (dbVerse && active) {
-          const johnName = getBookName(43, currentVersionId);
-          setVotd({
-            ref: `${johnName} 3:16`,
-            text: cleanVerseText(dbVerse.text),
-            book: 43,
-            chapter: 3,
-            verse: 16
-          });
+        // Fetch dynamic randomized Verse of the Day for current user & version
+        const dailyVotd = await loadVerseOfTheDay(currentVersionId);
+        if (dailyVotd && active) {
+          setVotd(dailyVotd);
         }
       } catch (e) {
         console.warn('[Home] Failed to load statistics or VOTD from database:', e);

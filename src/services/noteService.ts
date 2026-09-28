@@ -11,10 +11,11 @@ export async function addNote(
   verseNumber: number | null,
   content: string
 ): Promise<Note> {
+  const normVersion = (versionId || 'kjv').toLowerCase().trim();
   const db = getDatabase();
 
   // Check if a note already exists for this verse/chapter to prevent duplicate records
-  const existing = await getNoteForVerse(versionId, bookNumber, chapter, verseNumber);
+  const existing = await getNoteForVerse(normVersion, bookNumber, chapter, verseNumber);
   if (existing) {
     await updateNote(existing.id, content);
     return {
@@ -30,7 +31,7 @@ export async function addNote(
   await db.runAsync(
     `INSERT INTO notes (id, version_id, book_number, chapter, verse_number, content, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, versionId, bookNumber, chapter, verseNumber, content, now, now]
+    [id, normVersion, bookNumber, chapter, verseNumber, content, now, now]
   );
 
   // Sync to FTS virtual table
@@ -107,17 +108,18 @@ export async function getNoteForVerse(
   chapter: number,
   verseNumber: number | null
 ): Promise<Note | null> {
+  const normVersion = (versionId || 'kjv').toLowerCase().trim();
   const db = getDatabase();
   let row;
   if (verseNumber === null) {
     row = await db.getFirstAsync<any>(
-      `SELECT * FROM notes WHERE version_id = ? AND book_number = ? AND chapter = ? AND verse_number IS NULL`,
-      [versionId, bookNumber, chapter]
+      `SELECT * FROM notes WHERE LOWER(version_id) = ? AND book_number = ? AND chapter = ? AND verse_number IS NULL`,
+      [normVersion, bookNumber, chapter]
     );
   } else {
     row = await db.getFirstAsync<any>(
-      `SELECT * FROM notes WHERE version_id = ? AND book_number = ? AND chapter = ? AND verse_number = ?`,
-      [versionId, bookNumber, chapter, verseNumber]
+      `SELECT * FROM notes WHERE LOWER(version_id) = ? AND book_number = ? AND chapter = ? AND verse_number = ?`,
+      [normVersion, bookNumber, chapter, verseNumber]
     );
   }
 

@@ -18,8 +18,9 @@ let isSearchInitialized = false;
  * - Runs schema creation (no-op if tables exist)
  * - Returns the singleton database instance
  */
-// Minimum expected size for the full 651MB Bible database (must be at least 600MB)
-const MIN_VALID_DB_SIZE = 600 * 1024 * 1024;
+// Minimum expected size for the initial KJV Bible database (~400MB uncompressed, at least 50MB)
+const MIN_VALID_DB_SIZE = 50 * 1024 * 1024;
+const SEEDED_DB_VERSION = '1.1.0';
 
 async function copySourceDatabase(targetPath: string): Promise<boolean> {
   const possibleUris = [
@@ -52,7 +53,7 @@ async function copySourceDatabase(targetPath: string): Promise<boolean> {
       const newSize = newInfo.exists && 'size' in newInfo ? (newInfo.size || 0) : 0;
       if (newInfo.exists && newSize >= MIN_VALID_DB_SIZE) {
         console.log(`[DB] Database successfully copied from ${uri} (size: ${newSize} bytes)`);
-        await AsyncStorage.setItem('seeded_bible_db_version', '1.0.9');
+        await AsyncStorage.setItem('seeded_bible_db_version', SEEDED_DB_VERSION);
         return true;
       } else {
         console.warn(`[DB] Copied database is too small or truncated (${newSize} bytes). Trying next...`);
@@ -79,11 +80,13 @@ export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
 
     const dbInfo = await FileSystem.getInfoAsync(dbPath);
     const dbInfoSize = dbInfo.exists && 'size' in dbInfo ? (dbInfo.size || 0) : 0;
-    const isValidSize = dbInfo.exists && dbInfoSize >= MIN_VALID_DB_SIZE;
+    const currentSeededVer = await AsyncStorage.getItem('seeded_bible_db_version');
+    const isVersionMatch = currentSeededVer === SEEDED_DB_VERSION;
+    const isValidSize = dbInfo.exists && dbInfoSize >= MIN_VALID_DB_SIZE && isVersionMatch;
 
     if (!isValidSize) {
       if (dbInfo.exists) {
-        console.log(`[DB] Local database is invalid or truncated (${dbInfoSize} bytes). Removing to re-seed...`);
+        console.log(`[DB] Local database is outdated or invalid (${dbInfoSize} bytes, seededVer: ${currentSeededVer}). Removing to re-seed...`);
         try {
           await FileSystem.deleteAsync(dbPath, { idempotent: true });
           await FileSystem.deleteAsync(`${dbPath}-wal`, { idempotent: true });
