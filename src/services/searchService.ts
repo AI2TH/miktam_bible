@@ -1,4 +1,4 @@
-import { getDatabase } from './database';
+import { initSearchDatabase } from './database';
 import { rrfMerge } from '../utils/rrfMerge';
 import { BOOK_NAMES } from '../utils/constants';
 import type { SearchResult } from '../types/bible';
@@ -63,10 +63,11 @@ const SYNONYMS: Record<string, string[]> = {
 export async function searchFTS(
   query: string,
   versionId: string,
-  limit: number = 100,
-  isRag: boolean = false
+  limit: number = 20,
+  isRag: boolean = false,
+  offset: number = 0
 ): Promise<SearchResult[]> {
-  const db = getDatabase();
+  const db = await initSearchDatabase();
 
   // Clean query for FTS MATCH syntax
   const cleanQuery = query.replace(/['\"*]/g, '').trim();
@@ -101,8 +102,8 @@ export async function searchFTS(
        JOIN verses v ON v.id = f.rowid
        WHERE f.verses_fts MATCH ? AND v.version_id = ? AND v.book_number <= 66
        ORDER BY f.rank
-       LIMIT ?`,
-      [ftsQuery, versionId, Number(limit)]
+       LIMIT ? OFFSET ?`,
+      [ftsQuery, versionId, Number(limit), Number(offset)]
     );
 
     // Fallback to OR for RAG
@@ -120,8 +121,8 @@ export async function searchFTS(
          JOIN verses v ON v.id = f.rowid
          WHERE f.verses_fts MATCH ? AND v.version_id = ? AND v.book_number <= 66
          ORDER BY f.rank
-         LIMIT ?`,
-        [ftsQuery, versionId, Number(limit)]
+         LIMIT ? OFFSET ?`,
+        [ftsQuery, versionId, Number(limit), Number(offset)]
       );
     }
   } else {
@@ -135,8 +136,8 @@ export async function searchFTS(
          JOIN verses v ON v.id = f.rowid
          WHERE f.verses_fts MATCH ? AND v.version_id = ? AND v.book_number <= 66
          ORDER BY f.rank
-         LIMIT ?`,
-        [`"${cleanQuery}"`, versionId, Number(limit)]
+         LIMIT ? OFFSET ?`,
+        [`"${cleanQuery}"`, versionId, Number(limit), Number(offset)]
       );
     }
 
@@ -149,8 +150,8 @@ export async function searchFTS(
          JOIN verses v ON v.id = f.rowid
          WHERE f.verses_fts MATCH ? AND v.version_id = ? AND v.book_number <= 66
          ORDER BY f.rank
-         LIMIT ?`,
-        [andQuery, versionId, Number(limit)]
+         LIMIT ? OFFSET ?`,
+        [andQuery, versionId, Number(limit), Number(offset)]
       );
 
       const existingIds = new Set(rows.map(r => r.id));
@@ -170,8 +171,8 @@ export async function searchFTS(
          JOIN verses v ON v.id = f.rowid
          WHERE f.verses_fts MATCH ? AND v.version_id = ? AND v.book_number <= 66
          ORDER BY f.rank
-         LIMIT ?`,
-        [orQuery, versionId, Number(limit)]
+         LIMIT ? OFFSET ?`,
+        [orQuery, versionId, Number(limit), Number(offset)]
       );
 
       const existingIds = new Set(rows.map(r => r.id));
@@ -220,7 +221,7 @@ export async function hybridSearch(
   let vectorResults: SearchResult[] = [];
   if (queryEmbedding && queryEmbedding.length > 0) {
     try {
-      const db = getDatabase();
+      const db = await initSearchDatabase();
       const vectorRows = await db.getAllAsync<any>(
         `SELECT v.id, v.version_id, v.book_number, v.chapter, v.verse_number, v.text,
                 ve.distance
