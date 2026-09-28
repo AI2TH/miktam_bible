@@ -304,9 +304,44 @@ async function verifyAttachDatabaseEngine() {
   }
 }
 
+async function verifyConcordanceDb() {
+  console.log('\n======================================================');
+  console.log(' [6] VERIFYING AI2TH/concordance_db REMOTE REPOSITORY');
+  console.log('======================================================');
+
+  const filesToTest = [
+    { file: 'strongs_dictionary.db', table: 'strongs_dictionary', query: "SELECT strongs_number, original_word, definition FROM strongs_dictionary WHERE strongs_number = 'H7225'" },
+    { file: 'cross_references.db', table: 'cross_references', query: "SELECT count(*) as count FROM cross_references WHERE source_book = 43 AND source_chapter = 3 AND source_verse_start = 16" },
+    { file: 'interlinear_greek_nt.db', table: 'original_words', query: "SELECT original_text, gloss FROM original_words WHERE book_number = 43 AND chapter = 1 AND verse_number = 1 LIMIT 3" }
+  ];
+
+  for (const item of filesToTest) {
+    const url = `https://raw.githubusercontent.com/AI2TH/concordance_db/main/${item.file}`;
+    console.log(`  Checking ${item.file}...`);
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`Failed to fetch ${item.file}: HTTP ${res.status}`);
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    console.log(`    Downloaded ${item.file}: ${(buf.length / 1024 / 1024).toFixed(2)} MB`);
+    const tempPath = path.resolve(__dirname, `../scratch/_test_conc_${item.file}`);
+    fs.mkdirSync(path.dirname(tempPath), { recursive: true });
+    fs.writeFileSync(tempPath, buf);
+
+    const db = new Database(tempPath, { readonly: true });
+    const count = db.prepare(`SELECT count(*) as count FROM ${item.table}`).get().count;
+    console.log(`    Table ${item.table} total rows: ${count}`);
+    const sample = db.prepare(item.query).all();
+    console.log(`    Query test result:`, sample);
+    db.close();
+    fs.unlinkSync(tempPath);
+    console.log(`    ✅ ${item.file} verified successfully!`);
+  }
+}
+
 async function verifyGitAuthors() {
   console.log('\n======================================================');
-  console.log(' [6] VERIFYING GIT AUTHOR AUDIT');
+  console.log(' [7] VERIFYING GIT AUTHOR AUDIT');
   console.log('======================================================');
   
   const authors = execSync('git log -n 20 --format="%an <%ae>"').toString().trim().split('\n');
@@ -331,6 +366,7 @@ async function run() {
   await verifyVerseOfTheDayService();
   await verifyAllPartitions();
   await verifyAttachDatabaseEngine();
+  await verifyConcordanceDb();
   await verifyGitAuthors();
   
   console.log('\n======================================================');
