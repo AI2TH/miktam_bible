@@ -10,6 +10,7 @@
 
 import { getDatabase } from './database';
 import * as FileSystem from 'expo-file-system/legacy';
+import { GLOBAL_BIBLE_VERSIONS } from '../database/globalBibleCatalog';
 
 export interface DownloadProgress {
   versionId: string;
@@ -382,31 +383,47 @@ function resolveDownloadUrl(versionId: string): { url: string; filename: string 
  */
 async function downloadViaDatabaseAttach(
   versionId: string,
-  dbFileName: string,
+  candidateFileNames: string[],
   report: (stage: DownloadProgress['stage'], percent: number, message: string) => void
 ): Promise<boolean> {
   const normVersion = versionId.toLowerCase().trim();
   const db = getDatabase();
 
-  report('downloading', 10, `Downloading ${dbFileName} database...`);
+  const primaryName = candidateFileNames[0] || normVersion;
+  report('downloading', 10, `Downloading ${primaryName} database...`);
 
-  // Multi-repo endpoints under AI2TH for global language coverage
-  const candidateUrls = [
-    `https://raw.githubusercontent.com/AI2TH/bible_db/main/${encodeURIComponent(dbFileName)}.db`,
-    `https://cdn.jsdelivr.net/gh/AI2TH/bible_db@main/${encodeURIComponent(dbFileName)}.db`,
-    `https://raw.githubusercontent.com/AI2TH/bible_db_languages_a_f/main/${encodeURIComponent(dbFileName)}.db`,
-    `https://raw.githubusercontent.com/AI2TH/bible_db_languages_g_m/main/${encodeURIComponent(dbFileName)}.db`,
-    `https://raw.githubusercontent.com/AI2TH/bible_db_languages_n_s/main/${encodeURIComponent(dbFileName)}.db`,
-    `https://raw.githubusercontent.com/AI2TH/bible_db_languages_t_z/main/${encodeURIComponent(dbFileName)}.db`,
+  const repos = [
+    'https://raw.githubusercontent.com/AI2TH/bible_db/main',
+    'https://cdn.jsdelivr.net/gh/AI2TH/bible_db@main',
+    'https://raw.githubusercontent.com/AI2TH/bible_db_languages_a_f/main',
+    'https://raw.githubusercontent.com/AI2TH/bible_db_languages_g_m/main',
+    'https://raw.githubusercontent.com/AI2TH/bible_db_languages_n_s/main',
+    'https://raw.githubusercontent.com/AI2TH/bible_db_languages_t_z/main',
   ];
+
+  const candidateUrls: { url: string; fileName: string }[] = [];
+  const seenUrls = new Set<string>();
+
+  for (const fn of candidateFileNames) {
+    if (!fn) continue;
+    for (const repo of repos) {
+      const u = `${repo}/${encodeURIComponent(fn)}.db`;
+      if (!seenUrls.has(u)) {
+        seenUrls.add(u);
+        candidateUrls.push({ url: u, fileName: fn });
+      }
+    }
+  }
+
   const tempFileUri = `${FileSystem.cacheDirectory || FileSystem.documentDirectory}dl_${normVersion}_${Date.now()}.db`;
 
   let downloaded = false;
-  for (const url of candidateUrls) {
+  let downloadedFileName = primaryName;
+  for (const item of candidateUrls) {
     try {
-      console.log(`[BibleDownloadService] Attempting DB download from ${url}`);
+      console.log(`[BibleDownloadService] Attempting DB download from ${item.url}`);
       const downloadResumable = FileSystem.createDownloadResumable(
-        url,
+        item.url,
         tempFileUri,
         {},
         (downloadProgress) => {
@@ -416,7 +433,7 @@ async function downloadViaDatabaseAttach(
             const pct = Math.min(50, Math.round(10 + (written / total) * 40));
             const mbWritten = (written / (1024 * 1024)).toFixed(1);
             const mbTotal = (total / (1024 * 1024)).toFixed(1);
-            report('downloading', pct, `Downloading ${dbFileName} (${mbWritten}MB / ${mbTotal}MB)...`);
+            report('downloading', pct, `Downloading ${item.fileName} (${mbWritten}MB / ${mbTotal}MB)...`);
           }
         }
       );
@@ -426,26 +443,39 @@ async function downloadViaDatabaseAttach(
         const info = await FileSystem.getInfoAsync(tempFileUri);
         if (info.exists && 'size' in info && (info.size || 0) > 10240) {
           downloaded = true;
+          downloadedFileName = item.fileName;
           break;
         } else {
-          console.warn(`[BibleDownloadService] Downloaded candidate from ${url} was too small:`, info);
+          console.warn(`[BibleDownloadService] Downloaded candidate from ${item.url} was too small:`, info);
         }
       }
     } catch (dlErr) {
-      console.warn(`[BibleDownloadService] Download from ${url} failed:`, dlErr);
+      console.warn(`[BibleDownloadService] Download from ${item.url} failed:`, dlErr);
     }
   }
 
   if (!downloaded) {
-    throw new Error(`Failed to download database for ${dbFileName}`);
+    throw new Error(`Failed to download database for ${candidateFileNames.join(', ')}`);
   }
 
-  report('importing', 60, 'Attaching database and importing verses...');
+  report('importing', 60, `Attaching ${downloadedFileName} database and importing verses...`);
 
   const cleanPath = tempFileUri.replace(/^file:\/\//, '');
 
   try {
     await db.execAsync(`ATTACH DATABASE '${cleanPath}' AS temp_src;`);
+
+    // Ensure version record exists before inserting books and verses to satisfy foreign keys
+    const existingVersion = await db.getFirstAsync<{ id: string; name: string }>(
+      'SELECT id, name FROM bible_versions WHERE LOWER(id) = ?',
+      [normVersion]
+    );
+    if (!existingVersion) {
+      await db.runAsync(
+        `INSERT INTO bible_versions (id, name, language, is_downloaded, download_date, total_size_mb) VALUES (?, ?, ?, 0, datetime('now'), 0)`,
+        [normVersion, downloadedFileName, 'en']
+      );
+    }
 
     await db.withTransactionAsync(async () => {
       // Remove any previous partial data
@@ -476,23 +506,12 @@ async function downloadViaDatabaseAttach(
     const totalVerses = verseCountRow?.count || 31102;
     const approxSizeMb = parseFloat((totalVerses * 0.00015).toFixed(1)) || 4.5;
 
-    const existingVersion = await db.getFirstAsync<{ id: string; name: string }>(
-      'SELECT id, name FROM bible_versions WHERE LOWER(id) = ?',
-      [normVersion]
+    await db.runAsync(
+      `UPDATE bible_versions SET is_downloaded = 1, download_date = datetime('now'), total_size_mb = ? WHERE LOWER(id) = ?`,
+      [approxSizeMb, normVersion]
     );
-    if (!existingVersion) {
-      await db.runAsync(
-        `INSERT INTO bible_versions (id, name, language, is_downloaded, download_date, total_size_mb) VALUES (?, ?, ?, 1, datetime('now'), ?)`,
-        [normVersion, dbFileName, 'en', approxSizeMb]
-      );
-    } else {
-      await db.runAsync(
-        `UPDATE bible_versions SET is_downloaded = 1, download_date = datetime('now'), total_size_mb = ? WHERE LOWER(id) = ?`,
-        [approxSizeMb, normVersion]
-      );
-    }
 
-    report('completed', 100, `${dbFileName} is ready for offline reading!`);
+    report('completed', 100, `${downloadedFileName} is ready for offline reading!`);
     return true;
   } finally {
     try {
@@ -647,14 +666,35 @@ export async function downloadBibleVersion(
   };
 
   try {
-    const ai2thDbName = getAi2thDbFileName(normVersion) || normVersion.toUpperCase();
-    if (ai2thDbName) {
+    const catalogItem = GLOBAL_BIBLE_VERSIONS.find(
+      (v) => v.id.toLowerCase() === normVersion || v.abbreviation.toLowerCase() === normVersion
+    );
+
+    const candidates: string[] = [];
+    const addCandidate = (c?: string | null) => {
+      if (c && !candidates.includes(c)) candidates.push(c);
+    };
+
+    const ai2thMapped = getAi2thDbFileName(normVersion);
+    addCandidate(ai2thMapped);
+    addCandidate(normVersion);
+    addCandidate(normVersion.toLowerCase());
+    addCandidate(normVersion.toUpperCase());
+    if (catalogItem) {
+      addCandidate(getAi2thDbFileName(catalogItem.abbreviation.toLowerCase()));
+      addCandidate(catalogItem.abbreviation);
+      addCandidate(catalogItem.abbreviation.toLowerCase());
+      addCandidate(catalogItem.language);
+      addCandidate(catalogItem.language.toLowerCase());
+    }
+
+    if (candidates.length > 0) {
       try {
-        console.log(`[BibleDownloadService] Attempting ultra-fast SQLite ATTACH path for ${ai2thDbName}`);
-        await downloadViaDatabaseAttach(normVersion, ai2thDbName, report);
+        console.log(`[BibleDownloadService] Attempting ultra-fast SQLite ATTACH path for candidates:`, candidates);
+        await downloadViaDatabaseAttach(normVersion, candidates, report);
         return { success: true };
       } catch (attachErr) {
-        console.warn(`[BibleDownloadService] Fast ATTACH failed for ${ai2thDbName}, falling back to JSON:`, attachErr);
+        console.warn(`[BibleDownloadService] Fast ATTACH failed for candidates, falling back to JSON:`, attachErr);
       }
     }
 
