@@ -6,6 +6,9 @@ import { CREATE_TABLES_SQL, SCHEMA_VERSION } from '../database/schema';
 let db: SQLite.SQLiteDatabase | null = null;
 let isInitialized = false;
 
+let searchDb: SQLite.SQLiteDatabase | null = null;
+let isSearchInitialized = false;
+
 /**
  * Initialize the database. Call once at app startup in root _layout.tsx.
  * - Checks if preloaded bible.db exists in local sandbox; if not, copies it from assets
@@ -232,6 +235,45 @@ export function getDatabase(): SQLite.SQLiteDatabase {
 }
 
 /**
+ * Lazily open a second SQLite connection to the same bible.db file.
+ * Because the database is in WAL mode, read-heavy operations on this
+ * connection (search, spell-check dictionary) do not block the main
+ * connection used by the reader, bookmarks, etc.
+ */
+export async function initSearchDatabase(): Promise<SQLite.SQLiteDatabase> {
+  if (searchDb) return searchDb;
+
+  searchDb = await SQLite.openDatabaseAsync('bible.db');
+
+  // Same read-performance PRAGMAs used by the main connection.
+  await searchDb.execAsync(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = NORMAL;
+    PRAGMA cache_size = 10000;
+    PRAGMA foreign_keys = ON;
+    PRAGMA temp_store = MEMORY;
+  `);
+
+  console.log('[DB] Search database connection opened');
+  isSearchInitialized = true;
+  return searchDb;
+}
+
+/**
+ * Get the dedicated search database connection.
+ * Throws if initDatabase() hasn't been called yet (we need the file seeded first).
+ */
+export function getSearchDatabase(): SQLite.SQLiteDatabase {
+  if (!db || !isInitialized) {
+    throw new Error('Database not initialized. Call initDatabase() first.');
+  }
+  if (!searchDb || !isSearchInitialized) {
+    throw new Error('Search database not initialized. Call initSearchDatabase() first.');
+  }
+  return searchDb;
+}
+
+/**
  * Check if the database has been initialized.
  */
 export function isDatabaseInitialized(): boolean {
@@ -242,8 +284,14 @@ export function isDatabaseInitialized(): boolean {
  * Close the database connection. Call on app termination.
  */
 export async function closeDatabase(): Promise<void> {
+  if (searchDb) {
+    await searchDb.closeAsync();
+    searchDb = null;
+    isSearchInitialized = false;
+  }
   if (db) {
     await db.closeAsync();
     db = null;
+    isInitialized = false;
   }
 }
