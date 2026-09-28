@@ -1,6 +1,7 @@
 import { initSearchDatabase } from './database';
 import { rrfMerge } from '../utils/rrfMerge';
 import { BOOK_NAMES } from '../utils/constants';
+import { getBookName } from '../utils/bookTranslations';
 import type { SearchResult } from '../types/bible';
 
 /**
@@ -196,7 +197,7 @@ export async function searchFTS(
         verseNumber: r.verse_number,
         text: cleanText,
       },
-      bookName: BOOK_NAMES[r.book_number] || `Book ${r.book_number}`,
+      bookName: getBookName(r.book_number, versionId) || BOOK_NAMES[r.book_number] || `Book ${r.book_number}`,
       score: Math.abs(r.rank || 0),
       snippet: cleanText.substring(0, 150),
       source: 'fts' as const,
@@ -246,7 +247,7 @@ export async function hybridSearch(
           verseNumber: r.verse_number,
           text: r.text,
         },
-        bookName: BOOK_NAMES[r.book_number] || `Book ${r.book_number}`,
+        bookName: getBookName(r.book_number, versionId) || BOOK_NAMES[r.book_number] || `Book ${r.book_number}`,
         score: 1 - r.distance, // Convert distance to similarity
         snippet: r.text.substring(0, 100),
         source: 'vector' as const,

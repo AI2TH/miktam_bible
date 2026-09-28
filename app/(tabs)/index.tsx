@@ -48,8 +48,9 @@ export default function HomeScreen() {
         // Fetch John 3:16 as default VOTD. If downloaded, get actual translation text.
         const dbVerse = await getVerse(currentVersionId, 43, 3, 16);
         if (dbVerse && active) {
+          const johnName = getBookName(43, currentVersionId);
           setVotd({
-            ref: 'John 3:16',
+            ref: `${johnName} 3:16`,
             text: cleanVerseText(dbVerse.text),
             book: 43,
             chapter: 3,

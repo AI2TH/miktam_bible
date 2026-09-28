@@ -118,18 +118,19 @@ export async function getChapterVerses(
   bookNumber: number,
   chapter: number
 ): Promise<Verse[]> {
+  const normVersion = (versionId || 'kjv').toLowerCase().trim();
   console.log(`[bibleService] getChapterVerses called for versionId="${versionId}", bookNumber=${bookNumber}, chapter=${chapter}`);
   const db = getDatabase();
   try {
     let rows = await db.getAllAsync<any>(
       `SELECT * FROM verses
-       WHERE version_id = ? AND book_number = ? AND chapter = ?
+       WHERE (version_id = ? OR version_id = ?) AND book_number = ? AND chapter = ?
        ORDER BY verse_number`,
-      [versionId, bookNumber, chapter]
+      [versionId, normVersion, bookNumber, chapter]
     );
 
     // If version text does not exist in local DB (e.g. study module 'con'), gracefully fallback to KJV
-    if (rows.length === 0 && versionId !== 'kjv') {
+    if (rows.length === 0 && normVersion !== 'kjv') {
       console.log(`[bibleService] No verses for ${versionId}, falling back to kjv`);
       rows = await db.getAllAsync<any>(
         `SELECT * FROM verses
@@ -161,12 +162,20 @@ export async function getVerse(
   chapter: number,
   verseNumber: number
 ): Promise<Verse | null> {
+  const normVersion = (versionId || 'kjv').toLowerCase().trim();
   const db = getDatabase();
-  const row = await db.getFirstAsync<any>(
+  let row = await db.getFirstAsync<any>(
     `SELECT * FROM verses
-     WHERE version_id = ? AND book_number = ? AND chapter = ? AND verse_number = ?`,
-    [versionId, bookNumber, chapter, verseNumber]
+     WHERE (version_id = ? OR version_id = ?) AND book_number = ? AND chapter = ? AND verse_number = ?`,
+    [versionId, normVersion, bookNumber, chapter, verseNumber]
   );
+  if (!row && normVersion !== 'kjv') {
+    row = await db.getFirstAsync<any>(
+      `SELECT * FROM verses
+       WHERE version_id = 'kjv' AND book_number = ? AND chapter = ? AND verse_number = ?`,
+      [bookNumber, chapter, verseNumber]
+    );
+  }
   if (!row) return null;
   return {
     id: row.id,
@@ -180,10 +189,11 @@ export async function getVerse(
 
 /** Get total chapter count for a book */
 export async function getChapterCount(versionId: string, bookNumber: number): Promise<number> {
+  const normVersion = (versionId || 'kjv').toLowerCase().trim();
   const db = getDatabase();
   const row = await db.getFirstAsync<{ cnt: number }>(
-    'SELECT MAX(chapter) as cnt FROM verses WHERE version_id = ? AND book_number = ?',
-    [versionId, bookNumber]
+    'SELECT MAX(chapter) as cnt FROM verses WHERE (version_id = ? OR version_id = ?) AND book_number = ?',
+    [versionId, normVersion, bookNumber]
   );
   return row?.cnt ?? 0;
 }

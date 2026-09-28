@@ -1,5 +1,6 @@
 import { getDatabase } from './database';
 import { BOOK_NAMES } from '../utils/constants';
+import { getBookName } from '../utils/bookTranslations';
 import type { OriginalWord, StrongsEntry, CrossReferenceWithText } from '../types/concordance';
 
 function safeJsonParse<T>(jsonStr: any, fallback: T): T {
@@ -191,7 +192,7 @@ export async function getVersesByStrongs(
     chapter: r.chapter,
     verseNumber: r.verse_number,
     text: r.text,
-    bookName: BOOK_NAMES[r.book_number] || '',
+    bookName: getBookName(r.book_number, versionId) || BOOK_NAMES[r.book_number] || '',
   }));
 }
 
@@ -207,22 +208,27 @@ export async function getCrossReferences(
   verseNumber: number,
   versionId: string = 'kjv'
 ): Promise<CrossReferenceWithText[]> {
+  const normVersion = (versionId || 'kjv').toLowerCase().trim();
   const db = getDatabase();
   const rows = await db.getAllAsync<any>(
-    `SELECT cr.*, v.text as target_text
+    `SELECT cr.*, COALESCE(v.text, v_kjv.text, '') as target_text
      FROM cross_references cr
      LEFT JOIN verses v ON v.book_number = cr.target_book
        AND v.chapter = cr.target_chapter
        AND v.verse_number = cr.target_verse_start
-       AND v.version_id = ?
+       AND (v.version_id = ? OR v.version_id = ?)
+     LEFT JOIN verses v_kjv ON v_kjv.book_number = cr.target_book
+       AND v_kjv.chapter = cr.target_chapter
+       AND v_kjv.verse_number = cr.target_verse_start
+       AND v_kjv.version_id = 'kjv'
      WHERE cr.source_book = ? AND cr.source_chapter = ? AND cr.source_verse_start = ?
      ORDER BY cr.confidence DESC, cr.votes DESC
      LIMIT 20`,
-    [versionId, bookNumber, chapter, verseNumber]
+    [versionId, normVersion, bookNumber, chapter, verseNumber]
   );
 
   return rows.map(r => {
-    const targetBookName = BOOK_NAMES[r.target_book] || '';
+    const targetBookName = getBookName(r.target_book, versionId) || BOOK_NAMES[r.target_book] || '';
     const targetLabel = r.target_verse_end
       ? `${targetBookName} ${r.target_chapter}:${r.target_verse_start}-${r.target_verse_end}`
       : `${targetBookName} ${r.target_chapter}:${r.target_verse_start}`;
