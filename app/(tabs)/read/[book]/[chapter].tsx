@@ -139,26 +139,26 @@ export default function ChapterReaderScreen() {
     if (selectedVerse === null) return;
     setActionSheetVisible(false);
     loadOriginalWords(currentBookNumber, currentChapter, selectedVerse);
-    setConcordanceVisible(true);
+    setTimeout(() => setConcordanceVisible(true), 200);
   };
 
   const handleOpenCrossRefs = () => {
     if (selectedVerse === null) return;
     setActionSheetVisible(false);
     loadRefs(currentBookNumber, currentChapter, selectedVerse, currentVersionId);
-    setCrossRefsVisible(true);
+    setTimeout(() => setCrossRefsVisible(true), 200);
   };
 
   const handleOpenParallel = () => {
     if (selectedVerse === null) return;
     setActionSheetVisible(false);
-    setParallelVisible(true);
+    setTimeout(() => setParallelVisible(true), 200);
   };
 
   const handleSelectStrongs = (num: string) => {
     setStrongsNumber(num);
     setConcordanceVisible(false);
-    setStrongsVisible(true);
+    setTimeout(() => setStrongsVisible(true), 200);
   };
 
   const handleNavigateFromCrossRef = (b: number, c: number, v: number) => {
