@@ -3,10 +3,15 @@
 # Much gentler on System UI than uiautomator dump
 
 $ErrorActionPreference = "Continue"
-$ADB = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
-$DEVICE = "emulator-5554"
+$ADB = "adb.exe"
+if ($env:ADB_DEVICE) {
+    $DEVICE = $env:ADB_DEVICE
+} else {
+    $attached = @(adb devices | Select-String "\bdevice$" | ForEach-Object { ($_ -split "`t")[0] })
+    if ($attached.Count -gt 0) { $DEVICE = $attached[0] } else { $DEVICE = "4XAIUK75LZBIO7T8" }
+}
 $PKG = "miktam.bible"
-$RESULTS_DIR = "C:\Users\kevin\OneDrive\Documents\kalvin\bible\test_results"
+$RESULTS_DIR = "C:\Users\kevin\kalvin\bible\test_results"
 
 $script:Pass = 0
 $script:Fail = 0
@@ -150,7 +155,7 @@ function CheckLogcatForVerses([string]$versionId, [int]$bookNum, [int]$chapNum) 
 }
 
 # Tab coordinates
-$TY = 2311
+$TY = 2140
 $T_HOME = 108; $T_READ = 324; $T_SEARCH = 540; $T_CAL = 756; $T_PROF = 972
 
 $script:CurrentBookNum = 0
@@ -359,7 +364,7 @@ function Test-HomeScreen {
     AssertTest ($d -match "Verse of the Day" -or $d -match "John 3:16") "Home: VOTD card"
     AssertTest ($d -match "Continue Study" -or $d -match "Resume Reading") "Home: Continue Study"
     AssertTest ($d -match "AI Study Assistant" -or $d -match "OFFLINE") "Home: AI card"
-    AssertTest ($d -match "Read") "Home: Read tab"
+    AssertTest ($d -match "Bible" -or $d -match "Read") "Home: Bible tab"
     AssertTest ($d -match "Search") "Home: Search tab"
 }
 
@@ -798,7 +803,7 @@ if (-not $launched) {
     # Try to wait longer
     Start-Sleep -Seconds 10
     $d = GetDump
-    $launched = $d -match "Miktam Bible" -or $d -match "Read"
+    $launched = $d -match "Miktam Bible" -or $d -match "Read" -or $d -match "Bible"
     if (-not $launched) {
         Write-Host "Cannot proceed - app not visible" -ForegroundColor Red
         exit 1

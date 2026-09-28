@@ -135,16 +135,16 @@ function mockBibleAssistantResponse(prompt: string): string {
     const bookNum = state.currentBookNumber || 1;
     const chapter = state.currentChapter || 1;
     const verseNum = state.selectedVerseNumber || 1;
-    const versionId = state.currentVersionId || 'kjv';
+    const normVersion = (state.currentVersionId || 'kjv').toLowerCase().trim();
     
     const db = getDatabase();
     const row = db.getFirstSync(
-      'SELECT text FROM verses WHERE version_id = ? AND book_number = ? AND chapter = ? AND verse_number = ?',
-      [versionId, bookNum, chapter, verseNum]
+      'SELECT text FROM verses WHERE LOWER(version_id) = ? AND book_number = ? AND chapter = ? AND verse_number = ?',
+      [normVersion, bookNum, chapter, verseNum]
     );
     if (row && row.text) {
       fallbackText = row.text.replace(/<[^>]*>/g, '').trim();
-      fallbackRef = `${getBookName(bookNum, versionId)} ${chapter}:${verseNum}`;
+      fallbackRef = `${getBookName(bookNum, normVersion)} ${chapter}:${verseNum}`;
     }
   } catch (e) {
     // ignore

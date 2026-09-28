@@ -16,6 +16,7 @@ import { IconButton } from './IconButton';
 interface BottomSheetProps {
   visible: boolean;
   onClose: () => void;
+  onBack?: () => void;
   title?: string;
   children: React.ReactNode;
   maxHeight?: number | string;
@@ -25,6 +26,7 @@ interface BottomSheetProps {
 export function BottomSheet({
   visible,
   onClose,
+  onBack,
   title,
   children,
   maxHeight = '85%',
@@ -63,15 +65,29 @@ export function BottomSheet({
               </View>
 
               {/* Header */}
-              {(title !== undefined || onClose !== undefined) && (
+              {(title !== undefined || onClose !== undefined || onBack !== undefined) && (
                 <View style={[styles.header, { paddingHorizontal: spacing.base, paddingVertical: spacing.md }]}>
-                  {title ? (
-                    <Text variant="h3" style={styles.title}>
-                      {title}
-                    </Text>
-                  ) : (
-                    <View />
-                  )}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: spacing.xs, marginRight: spacing.sm }}>
+                    {onBack && (
+                      <IconButton
+                        onPress={onBack}
+                        size={32}
+                        backgroundColor={colors.surfaceMuted}
+                        icon={
+                          <Text variant="body" color="textSecondary" style={{ fontWeight: 'bold' }}>
+                            ←
+                          </Text>
+                        }
+                      />
+                    )}
+                    {title ? (
+                      <Text variant="h3" style={[styles.title, { flex: 1 }]} numberOfLines={1}>
+                        {title}
+                      </Text>
+                    ) : (
+                      <View style={{ flex: 1 }} />
+                    )}
+                  </View>
                   <IconButton
                     onPress={onClose}
                     size={32}

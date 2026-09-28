@@ -59,18 +59,15 @@ export default function ChapterReaderScreen() {
   // Local component states
   const [versions, setVersions] = useState<BibleVersion[]>([]);
   const [downloadedVersions, setDownloadedVersions] = useState<BibleVersion[]>([]);
+  type StudySheetMode = 'none' | 'actions' | 'concordance' | 'strongs' | 'cross_refs' | 'parallel';
+  const [studySheetMode, setStudySheetMode] = useState<StudySheetMode>('none');
   const [selectedVerse, setSelectedVerse] = useState<number | null>(null);
-  const [actionSheetVisible, setActionSheetVisible] = useState(false);
   
   // Note state
   const [noteContent, setNoteContent] = useState('');
   
   // Detail sheet states
-  const [concordanceVisible, setConcordanceVisible] = useState(false);
-  const [crossRefsVisible, setCrossRefsVisible] = useState(false);
-  const [parallelVisible, setParallelVisible] = useState(false);
   const [strongsNumber, setStrongsNumber] = useState<string | null>(null);
-  const [strongsVisible, setStrongsVisible] = useState(false);
   const [versionSheetVisible, setVersionSheetVisible] = useState(false);
 
   // Load active versions list
@@ -101,7 +98,7 @@ export default function ChapterReaderScreen() {
 
   const handleVerseLongPress = async (verseNumber: number) => {
     setSelectedVerse(verseNumber);
-    setActionSheetVisible(true);
+    setStudySheetMode('actions');
 
     // Fetch existing note for this verse
     const existingNote = await getNote(currentVersionId, currentBookNumber, currentChapter, verseNumber);
@@ -113,7 +110,7 @@ export default function ChapterReaderScreen() {
     try {
       await addBookmark(currentVersionId, currentBookNumber, currentChapter, selectedVerse, color);
       refetchBookmarks();
-      setActionSheetVisible(false);
+      setStudySheetMode('none');
     } catch (e) {
       console.error(e);
     }
@@ -126,43 +123,39 @@ export default function ChapterReaderScreen() {
       await removeBookmark(existing.id);
       refetchBookmarks();
     }
-    setActionSheetVisible(false);
+    setStudySheetMode('none');
   };
 
   const handleSaveNote = async () => {
     if (selectedVerse === null) return;
     await saveNote(currentVersionId, currentBookNumber, currentChapter, selectedVerse, noteContent);
-    setActionSheetVisible(false);
+    setStudySheetMode('none');
   };
 
   const handleOpenOriginalStudy = () => {
     if (selectedVerse === null) return;
-    setActionSheetVisible(false);
     loadOriginalWords(currentBookNumber, currentChapter, selectedVerse);
-    setTimeout(() => setConcordanceVisible(true), 200);
+    setStudySheetMode('concordance');
   };
 
   const handleOpenCrossRefs = () => {
     if (selectedVerse === null) return;
-    setActionSheetVisible(false);
     loadRefs(currentBookNumber, currentChapter, selectedVerse, currentVersionId);
-    setTimeout(() => setCrossRefsVisible(true), 200);
+    setStudySheetMode('cross_refs');
   };
 
   const handleOpenParallel = () => {
     if (selectedVerse === null) return;
-    setActionSheetVisible(false);
-    setTimeout(() => setParallelVisible(true), 200);
+    setStudySheetMode('parallel');
   };
 
   const handleSelectStrongs = (num: string) => {
     setStrongsNumber(num);
-    setConcordanceVisible(false);
-    setTimeout(() => setStrongsVisible(true), 200);
+    setStudySheetMode('strongs');
   };
 
   const handleNavigateFromCrossRef = (b: number, c: number, v: number) => {
-    setCrossRefsVisible(false);
+    setStudySheetMode('none');
     setSelectedVerse(v);
     router.replace({
       pathname: '/(tabs)/read/[book]/[chapter]',
@@ -171,7 +164,7 @@ export default function ChapterReaderScreen() {
   };
 
   const handleViewAllVersesStrongs = (num: string) => {
-    setStrongsVisible(false);
+    setStudySheetMode('none');
     router.push(`/concordance/${num}`);
   };
 
@@ -265,133 +258,132 @@ export default function ChapterReaderScreen() {
         }}
       />
 
-      {/* Main Long Press Verse Actions BottomSheet */}
+      {/* Unified Study BottomSheet */}
       <BottomSheet
-        visible={actionSheetVisible}
-        onClose={() => setActionSheetVisible(false)}
-        title={selectedVerse !== null ? `Verse ${selectedVerse} Study` : 'Verse Study'}
+        visible={studySheetMode !== 'none'}
+        onClose={() => setStudySheetMode('none')}
+        onBack={
+          studySheetMode === 'strongs'
+            ? () => setStudySheetMode('concordance')
+            : studySheetMode !== 'actions'
+            ? () => setStudySheetMode('actions')
+            : undefined
+        }
+        title={
+          studySheetMode === 'actions'
+            ? selectedVerse !== null ? `Verse ${selectedVerse} Study` : 'Verse Study'
+            : studySheetMode === 'concordance'
+            ? `Word Study: ${getBookName(currentBookNumber, currentVersionId)} ${currentChapter}:${selectedVerse}`
+            : studySheetMode === 'strongs'
+            ? `Strong's Dictionary: ${strongsNumber}`
+            : studySheetMode === 'cross_refs'
+            ? `Cross References: ${getBookName(currentBookNumber, currentVersionId)} ${currentChapter}:${selectedVerse}`
+            : studySheetMode === 'parallel'
+            ? `Compare Translations: ${getBookName(currentBookNumber, currentVersionId)} ${currentChapter}:${selectedVerse}`
+            : undefined
+        }
+        scrollable={studySheetMode !== 'parallel'}
       >
-        <View style={styles.sheetSection}>
-          <Text variant="h3" style={styles.sheetLabel}>
-            Highlight Color
-          </Text>
-          <HighlightColorPicker
-            selectedColor={
-              chapterBookmarks.find((b: Bookmark) => b.verseNumber === selectedVerse)?.highlightColor || ''
-            }
-            onSelectColor={handleApplyHighlight}
-          />
-          {chapterBookmarks.some((b: Bookmark) => b.verseNumber === selectedVerse) && (
+        {studySheetMode === 'actions' && (
+          <>
+            <View style={styles.sheetSection}>
+              <Text variant="h3" style={styles.sheetLabel}>
+                Highlight Color
+              </Text>
+              <HighlightColorPicker
+                selectedColor={
+                  chapterBookmarks.find((b: Bookmark) => b.verseNumber === selectedVerse)?.highlightColor || ''
+                }
+                onSelectColor={handleApplyHighlight}
+              />
+              {chapterBookmarks.some((b: Bookmark) => b.verseNumber === selectedVerse) && (
+                <Button
+                  label="Remove Highlight"
+                  onPress={handleRemoveHighlight}
+                  variant="outline"
+                  style={{ marginTop: spacing.xs }}
+                />
+              )}
+            </View>
+
+            <Divider style={{ marginVertical: spacing.md }} />
+
+            {/* Study tools quick links */}
+            <View style={[styles.toolRow, { gap: spacing.sm }]}>
+              <Button
+                label="Original Language"
+                onPress={handleOpenOriginalStudy}
+                variant="secondary"
+                style={styles.toolBtn}
+                icon={<Ionicons name="language" size={16} color={colors.primary} />}
+              />
+              <Button
+                label="Cross References"
+                onPress={handleOpenCrossRefs}
+                variant="secondary"
+                style={styles.toolBtn}
+                icon={<Ionicons name="git-branch-outline" size={16} color={colors.primary} />}
+              />
+            </View>
             <Button
-              label="Remove Highlight"
-              onPress={handleRemoveHighlight}
-              variant="outline"
-              style={{ marginTop: spacing.xs }}
+              label="Compare Translations"
+              onPress={handleOpenParallel}
+              variant="secondary"
+              style={{ marginTop: spacing.sm }}
+              icon={<Ionicons name="layers-outline" size={16} color={colors.primary} />}
             />
-          )}
-        </View>
 
-        <Divider style={{ marginVertical: spacing.md }} />
+            <Divider style={{ marginVertical: spacing.md }} />
 
-        {/* Study tools quick links */}
-        <View style={[styles.toolRow, { gap: spacing.sm }]}>
-          <Button
-            label="Original Language"
-            onPress={handleOpenOriginalStudy}
-            variant="secondary"
-            style={styles.toolBtn}
-            icon={<Ionicons name="language" size={16} color={colors.primary} />}
-          />
-          <Button
-            label="Cross References"
-            onPress={handleOpenCrossRefs}
-            variant="secondary"
-            style={styles.toolBtn}
-            icon={<Ionicons name="git-branch-outline" size={16} color={colors.primary} />}
-          />
-        </View>
-        <Button
-          label="Compare Translations"
-          onPress={handleOpenParallel}
-          variant="secondary"
-          style={{ marginTop: spacing.sm }}
-          icon={<Ionicons name="layers-outline" size={16} color={colors.primary} />}
-        />
+            {/* Notes editor */}
+            <View style={styles.sheetSection}>
+              <Text variant="h3" style={styles.sheetLabel}>
+                Study Reflection Note
+              </Text>
+              <TextInput
+                value={noteContent}
+                onChangeText={setNoteContent}
+                placeholder="Write note/reflection on this verse..."
+                placeholderTextColor={colors.textTertiary}
+                multiline
+                style={[
+                  styles.noteInput,
+                  {
+                    color: colors.textPrimary,
+                    borderColor: colors.border,
+                    backgroundColor: colors.background,
+                    borderRadius: borderRadius.md,
+                    padding: spacing.md,
+                  },
+                ]}
+              />
+              <Button
+                label="Save Note"
+                onPress={handleSaveNote}
+                variant="primary"
+                style={{ marginTop: spacing.sm }}
+              />
+            </View>
+          </>
+        )}
 
-        <Divider style={{ marginVertical: spacing.md }} />
+        {studySheetMode === 'concordance' && (
+          <InterlinearView originalWords={originalWords} onSelectStrongs={handleSelectStrongs} />
+        )}
 
-        {/* Notes editor */}
-        <View style={styles.sheetSection}>
-          <Text variant="h3" style={styles.sheetLabel}>
-            Study Reflection Note
-          </Text>
-          <TextInput
-            value={noteContent}
-            onChangeText={setNoteContent}
-            placeholder="Write note/reflection on this verse..."
-            placeholderTextColor={colors.textTertiary}
-            multiline
-            style={[
-              styles.noteInput,
-              {
-                color: colors.textPrimary,
-                borderColor: colors.border,
-                backgroundColor: colors.background,
-                borderRadius: borderRadius.md,
-                padding: spacing.md,
-              },
-            ]}
-          />
-          <Button
-            label="Save Note"
-            onPress={handleSaveNote}
-            variant="primary"
-            style={{ marginTop: spacing.sm }}
-          />
-        </View>
-      </BottomSheet>
-
-      {/* Interlinear Concordance View */}
-      <BottomSheet
-        visible={concordanceVisible}
-        onClose={() => setConcordanceVisible(false)}
-        title="Word Study Interlinear"
-      >
-        <InterlinearView originalWords={originalWords} onSelectStrongs={handleSelectStrongs} />
-      </BottomSheet>
-
-      {/* Strong's dictionary detail modal */}
-      <BottomSheet
-        visible={strongsVisible}
-        onClose={() => setStrongsVisible(false)}
-        title="Strong's Dictionary"
-      >
-        {strongsNumber && (
+        {studySheetMode === 'strongs' && strongsNumber && (
           <StrongsPopover
             strongsNumber={strongsNumber}
-            onClose={() => setStrongsVisible(false)}
+            onClose={() => setStudySheetMode('none')}
             onViewAllVerses={handleViewAllVersesStrongs}
           />
         )}
-      </BottomSheet>
 
-      {/* Cross-references list */}
-      <BottomSheet
-        visible={crossRefsVisible}
-        onClose={() => setCrossRefsVisible(false)}
-        title="Cross References"
-      >
-        <CrossRefPanel refs={crossRefs} onNavigate={handleNavigateFromCrossRef} />
-      </BottomSheet>
+        {studySheetMode === 'cross_refs' && (
+          <CrossRefPanel refs={crossRefs} onNavigate={handleNavigateFromCrossRef} />
+        )}
 
-      {/* Translations Comparison Panel */}
-      <BottomSheet
-        visible={parallelVisible}
-        onClose={() => setParallelVisible(false)}
-        title="Compare Translations"
-        scrollable={false}
-      >
-        {selectedVerse !== null && (
+        {studySheetMode === 'parallel' && selectedVerse !== null && (
           <ParallelView
             bookNumber={currentBookNumber}
             chapter={currentChapter}
