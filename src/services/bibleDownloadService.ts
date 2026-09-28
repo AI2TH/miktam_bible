@@ -231,6 +231,7 @@ export const AI2TH_DB_VERSIONS: Record<string, string> = {
   sp: 'SP',
   spaplatense: 'SpaPlatense',
   sparv: 'SpaRV',
+  rvr: 'SpaRV',
   sparv1865: 'SpaRV1865',
   sparvg: 'SpaRVG',
   srkdekavski: 'SrKDEkavski',
