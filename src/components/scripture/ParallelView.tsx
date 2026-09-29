@@ -4,6 +4,7 @@ import { useTheme } from '../../theme';
 import { Text } from '../ui/Text';
 import { Card } from '../ui/Card';
 import { getVerse } from '../../services/bibleService';
+import { cleanVerseText } from '../../utils/bibleUtils';
 import type { BibleVersion, Verse } from '../../types/bible';
 
 interface ParallelViewProps {
@@ -46,7 +47,7 @@ const TranslationCard = React.memo(({ item, fontSize, colors, spacing }: {
             { fontSize: fontSize - 1, lineHeight: (fontSize - 1) * 1.6 },
           ]}
         >
-          {item.verse.text}
+          {cleanVerseText(item.verse.text)}
         </Text>
       ) : (
         <Text variant="caption" color="textTertiary">

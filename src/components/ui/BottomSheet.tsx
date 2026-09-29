@@ -7,6 +7,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme';
@@ -34,6 +35,12 @@ export function BottomSheet({
 }: BottomSheetProps) {
   const { colors, borderRadius, spacing, shadows } = useTheme();
   const insets = useSafeAreaInsets();
+  const windowHeight = Dimensions.get('window').height;
+  const resolvedMaxHeight = typeof maxHeight === 'number'
+    ? maxHeight
+    : (typeof maxHeight === 'string' && maxHeight.endsWith('%')
+        ? (parseFloat(maxHeight) / 100) * windowHeight
+        : windowHeight * 0.85);
 
   return (
     <Modal
@@ -53,7 +60,8 @@ export function BottomSheet({
                   backgroundColor: colors.surfaceElevated,
                   borderTopLeftRadius: borderRadius.lg,
                   borderTopRightRadius: borderRadius.lg,
-                  maxHeight: maxHeight as any,
+                  maxHeight: resolvedMaxHeight,
+                  height: scrollable ? undefined : resolvedMaxHeight,
                   paddingBottom: Math.max(insets.bottom, 16) + spacing.md,
                 },
                 shadows.lg,
