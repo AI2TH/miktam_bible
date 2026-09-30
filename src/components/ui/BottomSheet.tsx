@@ -60,7 +60,7 @@ export function BottomSheet({
     >
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={[styles.backdrop, { backgroundColor: 'rgba(0, 0, 0, 0.5)' }]}>
-          <TouchableWithoutFeedback>
+          <TouchableWithoutFeedback onPress={() => {}}>
             <KeyboardAvoidingView
               behavior={Platform.OS === 'ios' ? 'padding' : undefined}
               style={[
