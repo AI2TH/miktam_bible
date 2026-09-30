@@ -229,7 +229,7 @@ export default function ChatScreen() {
         title="Manage On-Device AI"
         maxHeight="85%"
       >
-        <ScrollView contentContainerStyle={{ gap: spacing.md, paddingVertical: spacing.sm }} showsVerticalScrollIndicator={false}>
+        <View style={{ gap: spacing.md, paddingVertical: spacing.sm }}>
           <Text variant="bodySmall" color="textSecondary">
             The app features zero cloud dependencies for AI. Download models directly into app storage to enable offline biblical study chat and speech-to-text.
           </Text>
@@ -351,7 +351,7 @@ export default function ChatScreen() {
               );
             })}
           </View>
-        </ScrollView>
+        </View>
       </BottomSheet>
     </SafeAreaView>
   );

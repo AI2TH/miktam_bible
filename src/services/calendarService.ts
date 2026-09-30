@@ -1,5 +1,6 @@
 import { getDatabase } from './database';
 import { generateUUID } from '../utils/uuid';
+import { cleanVerseText } from '../utils/bibleUtils';
 import type { Verse } from '../types/bible';
 
 export interface PromiseVerseInfo {
@@ -76,7 +77,7 @@ export async function getPromiseVerse(
       calendarType: row.calendar_type as 'monthly' | 'yearly',
       targetDate: row.target_date,
       createdAt: row.created_at,
-      verseText: row.verse_text,
+      verseText: cleanVerseText(row.verse_text || ''),
       bookName: row.book_name,
     };
   } catch (error) {

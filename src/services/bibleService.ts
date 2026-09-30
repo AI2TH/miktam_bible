@@ -1,5 +1,6 @@
 import { getDatabase } from './database';
 import type { Verse, Book, BibleVersion } from '../types/bible';
+import { cleanVerseText } from '../utils/bibleUtils';
 
 // ─── BIBLE VERSIONS ──────────────────────────────
 
@@ -185,7 +186,7 @@ export async function getVerse(
     bookNumber: row.book_number,
     chapter: row.chapter,
     verseNumber: row.verse_number,
-    text: row.text,
+    text: cleanVerseText(row.text),
   };
 }
 

@@ -366,7 +366,7 @@ export default function CalendarScreen() {
         title={`Set Promise of the ${selectorType === 'yearly' ? 'Year' : 'Month'}`}
         maxHeight="85%"
       >
-        <ScrollView contentContainerStyle={{ gap: spacing.md, paddingVertical: spacing.sm }} showsVerticalScrollIndicator={false}>
+        <View style={{ gap: spacing.md, paddingVertical: spacing.sm }}>
           
           {/* Tabs for Suggested vs Custom */}
           <View style={[styles.tabBar, { backgroundColor: colors.surface, borderRadius: borderRadius.md }]}>
@@ -417,7 +417,7 @@ export default function CalendarScreen() {
                 >
                   <Card style={styles.suggestedCard} bordered>
                     <Text variant="scripture" style={[styles.suggestedText, { marginBottom: spacing.xs }]}>
-                      "{item.text}"
+                      "{cleanVerseText(item.text)}"
                     </Text>
                     <Text variant="bodySmall" color="primary" style={{ fontWeight: 'bold', textAlign: 'right' }}>
                       — {getBookName(item.bookNumber, currentVersionId)} {item.chapter}:{item.verseNumber}
@@ -533,7 +533,7 @@ export default function CalendarScreen() {
             </View>
           )}
 
-        </ScrollView>
+        </View>
       </BottomSheet>
     </SafeAreaView>
   );

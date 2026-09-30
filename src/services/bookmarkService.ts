@@ -1,6 +1,7 @@
 import { getDatabase } from './database';
 import { BOOK_NAMES } from '../utils/constants';
 import { getBookName } from '../utils/bookTranslations';
+import { cleanVerseText } from '../utils/bibleUtils';
 import type { Bookmark } from '../types/user';
 import { generateUUID } from '../utils/uuid';
 
@@ -63,7 +64,7 @@ export async function getAllBookmarks(): Promise<(Bookmark & { bookName: string;
     updatedAt: r.updated_at,
     isSynced: r.is_synced === 1,
     bookName: getBookName(r.book_number, r.version_id) || BOOK_NAMES[r.book_number] || '',
-    text: r.text || '',
+    text: cleanVerseText(r.text || ''),
   }));
 }
 

@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useConcordance } from '../../hooks/useConcordance';
 import { Text } from '../ui/Text';
 import { Skeleton } from '../ui/Skeleton';
@@ -49,7 +49,7 @@ export function StrongsPopover({
   }
 
   return (
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.container}>
+    <View style={styles.container}>
       <View style={styles.header}>
         <Text variant="h2" color="primary">
           {strongsEntry.strongsNumber} — {strongsEntry.transliteration}
@@ -108,7 +108,7 @@ export function StrongsPopover({
         onPress={() => onViewAllVerses(strongsEntry.strongsNumber)}
         style={styles.actionButton}
       />
-    </ScrollView>
+    </View>
   );
 }
 
