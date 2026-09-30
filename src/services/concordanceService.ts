@@ -1,6 +1,7 @@
 import { getDatabase } from './database';
 import { BOOK_NAMES } from '../utils/constants';
 import { getBookName } from '../utils/bookTranslations';
+import { cleanVerseText } from '../utils/bibleUtils';
 import type { OriginalWord, StrongsEntry, CrossReferenceWithText } from '../types/concordance';
 
 function safeJsonParse<T>(jsonStr: any, fallback: T): T {
@@ -192,7 +193,7 @@ export async function getVersesByStrongs(
     bookNumber: r.book_number,
     chapter: r.chapter,
     verseNumber: r.verse_number,
-    text: r.text,
+    text: cleanVerseText(r.text),
     bookName: getBookName(r.book_number, normVersion) || BOOK_NAMES[r.book_number] || '',
   }));
 }
@@ -247,7 +248,7 @@ export async function getCrossReferences(
       relationshipType: r.relationship_type,
       confidence: r.confidence,
       votes: r.votes,
-      targetText: r.target_text || '',
+      targetText: cleanVerseText(r.target_text || ''),
       targetBookName,
       targetLabel,
     };

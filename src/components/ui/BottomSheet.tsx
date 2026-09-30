@@ -21,6 +21,7 @@ interface BottomSheetProps {
   title?: string;
   children: React.ReactNode;
   maxHeight?: number | string;
+  height?: number | string;
   scrollable?: boolean;
 }
 
@@ -31,6 +32,7 @@ export function BottomSheet({
   title,
   children,
   maxHeight = '85%',
+  height,
   scrollable = true,
 }: BottomSheetProps) {
   const { colors, borderRadius, spacing, shadows } = useTheme();
@@ -41,6 +43,13 @@ export function BottomSheet({
     : (typeof maxHeight === 'string' && maxHeight.endsWith('%')
         ? (parseFloat(maxHeight) / 100) * windowHeight
         : windowHeight * 0.85);
+  const resolvedHeight = height !== undefined
+    ? (typeof height === 'number'
+        ? height
+        : (typeof height === 'string' && height.endsWith('%')
+            ? (parseFloat(height) / 100) * windowHeight
+            : windowHeight * 0.85))
+    : undefined;
 
   return (
     <Modal
@@ -61,7 +70,7 @@ export function BottomSheet({
                   borderTopLeftRadius: borderRadius.lg,
                   borderTopRightRadius: borderRadius.lg,
                   maxHeight: resolvedMaxHeight,
-                  height: scrollable ? undefined : resolvedMaxHeight,
+                  height: resolvedHeight !== undefined ? resolvedHeight : (scrollable ? undefined : resolvedMaxHeight),
                   paddingBottom: Math.max(insets.bottom, 16) + spacing.md,
                 },
                 shadows.lg,
@@ -112,7 +121,7 @@ export function BottomSheet({
               {/* Content area */}
               {scrollable ? (
                 <ScrollView
-                  style={{ paddingHorizontal: spacing.base }}
+                  style={{ flexShrink: 1, paddingHorizontal: spacing.base }}
                   contentContainerStyle={styles.scrollContent}
                   keyboardShouldPersistTaps="handled"
                 >
@@ -162,5 +171,6 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
+    paddingBottom: 24,
   },
 });

@@ -2,6 +2,7 @@ import { initSearchDatabase } from './database';
 import { rrfMerge } from '../utils/rrfMerge';
 import { BOOK_NAMES } from '../utils/constants';
 import { getBookName } from '../utils/bookTranslations';
+import { cleanVerseText } from '../utils/bibleUtils';
 import type { SearchResult } from '../types/bible';
 
 /**
@@ -187,8 +188,7 @@ export async function searchFTS(
   }
 
   return rows.map((r: any) => {
-    // Strip inline Strong's number tags (e.g. <S>2532</S>) from verse text
-    const cleanText = r.text.replace(/<S>\d+<\/S>/g, '').replace(/\s{2,}/g, ' ').trim();
+    const cleanText = cleanVerseText(r.text);
     return {
       verse: {
         id: r.id,
@@ -240,20 +240,23 @@ export async function hybridSearch(
         [normVersion, JSON.stringify(queryEmbedding)]
       );
 
-      vectorResults = vectorRows.map((r: any) => ({
-        verse: {
-          id: r.id,
-          versionId: r.version_id,
-          bookNumber: r.book_number,
-          chapter: r.chapter,
-          verseNumber: r.verse_number,
-          text: r.text,
-        },
-        bookName: getBookName(r.book_number, normVersion) || BOOK_NAMES[r.book_number] || `Book ${r.book_number}`,
-        score: 1 - r.distance, // Convert distance to similarity
-        snippet: r.text.substring(0, 100),
-        source: 'vector' as const,
-      }));
+      vectorResults = vectorRows.map((r: any) => {
+        const cleanText = cleanVerseText(r.text);
+        return {
+          verse: {
+            id: r.id,
+            versionId: r.version_id,
+            bookNumber: r.book_number,
+            chapter: r.chapter,
+            verseNumber: r.verse_number,
+            text: cleanText,
+          },
+          bookName: getBookName(r.book_number, normVersion) || BOOK_NAMES[r.book_number] || `Book ${r.book_number}`,
+          score: 1 - r.distance, // Convert distance to similarity
+          snippet: cleanText.substring(0, 100),
+          source: 'vector' as const,
+        };
+      });
     } catch (e) {
       // Gracefully catch cases where sqlite-vec/verse_embeddings is not yet initialized
       console.warn('[Search] Vector search failed or table not available. Falling back to FTS only.', e);

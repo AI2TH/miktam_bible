@@ -57,16 +57,17 @@ export function formatScriptureRef(ref: VerseRef, versionIdOrLang?: string): str
   return `${bookName} ${ref.chapter}:${ref.verseNumber}`;
 }
 
-/** Strips Strong's tags, superscript footnotes, and HTML tags like <b> from verse text */
+/** Strips Strong's tags, superscript footnotes, and HTML/XML tags from verse text */
 export function cleanVerseText(text: string): string {
   if (!text) return '';
   return text
+    .replace(/<sup[^>]*>.*?<\/sup>/gi, '')
+    .replace(/<f[^>]*>.*?<\/f>/gi, '')
     .replace(/<S>\d+<\/S>/gi, '')
     .replace(/<S>\d+/gi, '')
     .replace(/\d+<\/S>/gi, '')
-    .replace(/<\/?[Ss]\b>?/gi, '')
-    .replace(/<sup[^>]*>.*?<\/sup>/gi, '')
-    .replace(/<\/?[Bb]>/gi, '')
+    .replace(/<\/?[Ss]\b[^>]*>/gi, '')
+    .replace(/<[^>]+>/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
