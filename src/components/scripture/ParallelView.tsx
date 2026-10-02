@@ -4,7 +4,7 @@ import { useTheme } from '../../theme';
 import { Text } from '../ui/Text';
 import { Card } from '../ui/Card';
 import { getVerse } from '../../services/bibleService';
-import { cleanVerseText } from '../../utils/bibleUtils';
+import { cleanVerseText, getVersionAbbreviation } from '../../utils/bibleUtils';
 import type { BibleVersion, Verse } from '../../types/bible';
 
 interface ParallelViewProps {
@@ -32,7 +32,7 @@ const TranslationCard = React.memo(({ item, fontSize, colors, spacing }: {
     <Card style={styles.card}>
       <View style={styles.header}>
         <Text variant="h3" color="primary" style={{ fontWeight: 'bold' }}>
-          {item.version.name} ({item.version.id.toUpperCase()})
+          {item.version.name} ({getVersionAbbreviation(item.version.id)})
         </Text>
       </View>
       {item.loading ? (

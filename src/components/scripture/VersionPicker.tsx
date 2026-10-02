@@ -33,21 +33,53 @@ interface VersionPickerProps {
 
 const TOP_LANGUAGES = [
   { code: 'all', label: 'All' },
-  { code: 'en', label: 'English' },
-  { code: 'es', label: 'Spanish' },
-  { code: 'fr', label: 'French' },
-  { code: 'de', label: 'German' },
-  { code: 'pt', label: 'Portuguese' },
-  { code: 'ru', label: 'Russian' },
-  { code: 'zh', label: 'Chinese' },
-  { code: 'ar', label: 'Arabic' },
-  { code: 'hi', label: 'Hindi' },
-  { code: 'ta', label: 'Tamil' },
-  { code: 'te', label: 'Telugu' },
-  { code: 'tl', label: 'Tagalog' },
-  { code: 'vi', label: 'Vietnamese' },
-  { code: 'uk', label: 'Ukrainian' },
+  { code: 'eng', label: 'English' },
+  { code: 'spa', label: 'Spanish' },
+  { code: 'fra', label: 'French' },
+  { code: 'deu', label: 'German' },
+  { code: 'por', label: 'Portuguese' },
+  { code: 'rus', label: 'Russian' },
+  { code: 'zho', label: 'Chinese' },
+  { code: 'ara', label: 'Arabic' },
+  { code: 'hin', label: 'Hindi' },
+  { code: 'tam', label: 'Tamil' },
+  { code: 'tel', label: 'Telugu' },
+  { code: 'tgl', label: 'Tagalog' },
+  { code: 'vie', label: 'Vietnamese' },
+  { code: 'ukr', label: 'Ukrainian' },
 ];
+
+const LANGUAGE_CODE_MAP: Record<string, string[]> = {
+  en: ['eng'],
+  eng: ['eng'],
+  es: ['spa'],
+  spa: ['spa'],
+  fr: ['fra', 'fre'],
+  fra: ['fra', 'fre'],
+  de: ['deu', 'ger'],
+  deu: ['deu', 'ger'],
+  pt: ['por'],
+  por: ['por'],
+  ru: ['rus'],
+  rus: ['rus'],
+  zh: ['zho', 'cmn', 'nan', 'yue', 'cjy', 'chi'],
+  zho: ['zho', 'cmn', 'nan', 'yue', 'cjy', 'chi'],
+  cmn: ['zho', 'cmn', 'nan', 'yue', 'cjy', 'chi'],
+  ar: ['ara', 'arb', 'arq', 'acw', 'acm', 'apc', 'pga', 'shu_rom'],
+  ara: ['ara', 'arb', 'arq', 'acw', 'acm', 'apc', 'pga', 'shu_rom'],
+  hi: ['hin'],
+  hin: ['hin'],
+  ta: ['tam'],
+  tam: ['tam'],
+  te: ['tel'],
+  tel: ['tel'],
+  tl: ['tgl', 'fil'],
+  tgl: ['tgl', 'fil'],
+  vi: ['vie'],
+  vie: ['vie'],
+  uk: ['ukr'],
+  ukr: ['ukr'],
+};
 
 export function VersionPicker({
   versions = [],
@@ -118,12 +150,22 @@ export function VersionPicker({
   // Filtered versions based on search and language
   const filteredVersions = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    const langFilter = selectedLanguageCode;
+    const langFilter = (selectedLanguageCode || 'all').trim().toLowerCase();
 
     return GLOBAL_BIBLE_VERSIONS.filter((v) => {
       // Language filter
-      if (langFilter !== 'all' && v.language.toLowerCase() !== langFilter.toLowerCase()) {
-        return false;
+      if (langFilter !== 'all') {
+        const vLang = (v.language || '').toLowerCase().trim();
+        const vLangName = (v.languageName || '').toLowerCase().trim();
+        const aliases = LANGUAGE_CODE_MAP[langFilter];
+
+        const matches =
+          (aliases && aliases.includes(vLang)) ||
+          vLang === langFilter ||
+          vLangName.includes(langFilter) ||
+          vLang.startsWith(langFilter);
+
+        if (!matches) return false;
       }
       // Search query filter
       if (!q) return true;
@@ -432,7 +474,12 @@ export function VersionPicker({
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ paddingHorizontal: spacing.sm, paddingVertical: spacing.xs }}
             renderItem={({ item }) => {
-              const isPillActive = selectedLanguageCode.toLowerCase() === item.code.toLowerCase();
+              const curLang = selectedLanguageCode.toLowerCase();
+              const itemCode = item.code.toLowerCase();
+              const isPillActive =
+                curLang === itemCode ||
+                (LANGUAGE_CODE_MAP[itemCode]?.includes(curLang) ?? false);
+
               return (
                 <TouchableOpacity
                   style={[
@@ -446,7 +493,7 @@ export function VersionPicker({
                       paddingVertical: spacing.xs,
                     },
                   ]}
-                  onPress={() => setSelectedLanguageCode(item.code)}
+                  onPress={() => setSelectedLanguageCode(isPillActive && item.code !== 'all' ? 'all' : item.code)}
                 >
                   <Text
                     variant="caption"

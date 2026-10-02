@@ -142,6 +142,28 @@ export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
   // Automatically sync local model files with database state
   await syncLocalModels(db);
 
+  // Cleanup any corrupted fallback downloads where non-KJV version received duplicate KJV verses
+  try {
+    const corrupted = await db.getAllAsync<{ id: string }>(
+      `SELECT DISTINCT bv.id FROM bible_versions bv
+       JOIN verses v ON LOWER(bv.id) = LOWER(v.version_id)
+       WHERE LOWER(bv.id) NOT IN ('kjv', 'akjv', 'ukjv', 'rnkjv', 'kjva', 'kjvpce')
+         AND v.book_number = 1 AND v.chapter = 1 AND v.verse_number = 1
+         AND v.text LIKE 'In the beginning God created the heaven and the earth%'
+         AND bv.is_downloaded = 1`
+    );
+    for (const row of corrupted) {
+      console.log(`[DB] Cleaning up corrupted fallback version: ${row.id}`);
+      await db.runAsync('DELETE FROM verses WHERE LOWER(version_id) = ?', [row.id.toLowerCase()]);
+      await db.runAsync('DELETE FROM books WHERE LOWER(version_id) = ?', [row.id.toLowerCase()]);
+      await db.runAsync('UPDATE bible_versions SET is_downloaded = 0, download_date = NULL WHERE LOWER(id) = ?', [row.id.toLowerCase()]);
+    }
+    // Also ensure aldhelm has no non-Psalms verses if previously seeded
+    await db.runAsync("DELETE FROM verses WHERE LOWER(version_id) = 'aldhelm' AND book_number != 19;");
+  } catch (cleanErr) {
+    console.warn('[DB] Cleanup notice:', cleanErr);
+  }
+
   console.log('[DB] Database initialized, schema version:', SCHEMA_VERSION);
   isInitialized = true;
   return db;

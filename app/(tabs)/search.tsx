@@ -9,6 +9,7 @@ import { Text } from '../../src/components/ui/Text';
 import { useSearch } from '../../src/hooks/useSearch';
 import { useReaderStore } from '../../src/stores/readerStore';
 import { getBookName } from '../../src/utils/bookTranslations';
+import { getVersionAbbreviation } from '../../src/utils/bibleUtils';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -78,7 +79,7 @@ export default function SearchScreen() {
             value={query}
             onChangeText={setQuery}
             onSubmitEditing={handleSearch}
-            placeholder={`Search in ${currentVersionId.toUpperCase()}...`}
+            placeholder={`Search in ${getVersionAbbreviation(currentVersionId)}...`}
             placeholderTextColor={colors.textTertiary}
             style={[styles.input, { color: colors.textPrimary }]}
             returnKeyType="search"

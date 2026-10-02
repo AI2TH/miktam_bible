@@ -54,6 +54,16 @@ export function ChapterView({
       keyExtractor={(item) => item.id.toString()}
       contentContainerStyle={{ padding: spacing.base, paddingBottom: spacing['4xl'] }}
       showsVerticalScrollIndicator={false}
+      ListEmptyComponent={
+        <View style={{ padding: spacing['2xl'], alignItems: 'center', justifyContent: 'center', marginVertical: spacing['2xl'] }}>
+          <Text variant="h3" color="textSecondary" style={{ textAlign: 'center', marginBottom: spacing.sm }}>
+            Content Not Available
+          </Text>
+          <Text variant="bodySmall" color="textTertiary" style={{ textAlign: 'center' }}>
+            This book or chapter is not included in the selected Bible translation.
+          </Text>
+        </View>
+      }
       ListFooterComponent={
         (onNextChapter || onPrevChapter) ? (
           <View style={[styles.navFooter, { marginTop: spacing.xl, borderTopColor: colors.border, paddingTop: spacing.lg }]}>

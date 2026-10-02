@@ -132,15 +132,22 @@ export async function getChapterVerses(
       [normVersion, bookNumber, chapter]
     );
 
-    // If version text does not exist in local DB (e.g. study module 'con'), gracefully fallback to KJV
+    // Only fallback if this version has ZERO verses in the database (e.g. unseeded study module)
+    // Never fallback if the version exists locally but simply doesn't contain this book (e.g. partial NT or Psalms)
     if (rows.length === 0 && normVersion !== 'kjv') {
-      console.log(`[bibleService] No verses for ${versionId}, falling back to kjv`);
-      rows = await db.getAllAsync<any>(
-        `SELECT * FROM verses
-         WHERE version_id = 'kjv' AND book_number = ? AND chapter = ?
-         ORDER BY verse_number`,
-        [bookNumber, chapter]
+      const anyVerses = await db.getFirstAsync<any>(
+        'SELECT id FROM verses WHERE LOWER(version_id) = ? LIMIT 1',
+        [normVersion]
       );
+      if (!anyVerses) {
+        console.log(`[bibleService] No verses at all in DB for ${versionId}, falling back to kjv`);
+        rows = await db.getAllAsync<any>(
+          `SELECT * FROM verses
+           WHERE version_id = 'kjv' AND book_number = ? AND chapter = ?
+           ORDER BY verse_number`,
+          [bookNumber, chapter]
+        );
+      }
     }
 
     console.log(`[bibleService] getChapterVerses fetched ${rows.length} verses`);
@@ -167,18 +174,11 @@ export async function getVerse(
 ): Promise<Verse | null> {
   const normVersion = (versionId || 'kjv').toLowerCase().trim();
   const db = getDatabase();
-  let row = await db.getFirstAsync<any>(
+  const row = await db.getFirstAsync<any>(
     `SELECT * FROM verses
      WHERE LOWER(version_id) = ? AND book_number = ? AND chapter = ? AND verse_number = ?`,
     [normVersion, bookNumber, chapter, verseNumber]
   );
-  if (!row && normVersion !== 'kjv') {
-    row = await db.getFirstAsync<any>(
-      `SELECT * FROM verses
-       WHERE version_id = 'kjv' AND book_number = ? AND chapter = ? AND verse_number = ?`,
-      [bookNumber, chapter, verseNumber]
-    );
-  }
   if (!row) return null;
   return {
     id: row.id,
