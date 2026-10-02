@@ -28,11 +28,26 @@ const REPOS = [
 ];
 
 const AUDIT_SAMPLES = {
-  'bible_db': ['KJV.db', 'ASV.db', 'BBE.db', 'Darby.db', 'SpaRV.db', 'FreBBB.db', 'GerBoLut.db', 'ChiUn.db'],
-  'bible_db_languages_a_f': ['fraLSG.db', 'deu1912.db', 'aau.db', 'agr.db', 'afr.db', 'ben.db', 'ceb.db'],
-  'bible_db_languages_g_m': ['hin.db', 'latVUC.db', 'guj.db', 'hau.db', 'ita.db', 'jpn.db', 'mal.db', 'mar.db'],
-  'bible_db_languages_n_s': ['spaRV1909.db', 'rus.db', 'nld.db', 'pol.db', 'por.db', 'pan.db', 'ron.db', 'som.db'],
-  'bible_db_languages_t_z': ['tam2017.db', 'tel.db', 'tgl.db', 'tha.db', 'tur.db', 'ukr.db', 'vie.db', 'yor.db'],
+  'bible_db': [
+    'KJV.db', 'ASV.db', 'BBE.db', 'BSB.db', 'Darby.db', 'Geneva1599.db',
+    'SpaRV.db', 'FreBBB.db', 'GerBoLut.db', 'ChiUn.db', 'Byz.db', 'Vulgate.db', 'WLC.db'
+  ],
+  'bible_db_languages_a_f': [
+    'fraLSG.db', 'deu1912.db', 'aau.db', 'agr.db', 'ben.db', 'ceb.db',
+    'dan.db', 'cesnkb.db', 'eng_webbe.db', 'fra_fob.db', 'dgz.db', 'bzj.db'
+  ],
+  'bible_db_languages_g_m': [
+    'hin.db', 'latVUC.db', 'guj.db', 'hau.db', 'ita.db', 'jpn.db', 'mal.db', 'mar.db',
+    'heb.db', 'ind.db', 'kan.db', 'KorHKJV.db', 'mya.db', 'Geneva1599.db'
+  ],
+  'bible_db_languages_n_s': [
+    'spaRV1909.db', 'rus.db', 'nld.db', 'pol.db', 'por.db', 'pan.db', 'ron.db', 'som.db',
+    'swe.db', 'swh1850.db', 'pon.db', 'pab.db', 'SweKarlXII.db'
+  ],
+  'bible_db_languages_t_z': [
+    'tam2017.db', 'tel.db', 'tgl.db', 'tha.db', 'tur.db', 'ukr.db', 'vie.db', 'yor.db',
+    'tam.db', 'tamtcv.db', 'urd.db', 'TR.db', 'zaw.db'
+  ],
 };
 
 async function auditRepositoryPartition(repoInfo) {

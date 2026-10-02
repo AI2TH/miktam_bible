@@ -11,6 +11,7 @@
 import { getDatabase } from './database';
 import * as FileSystem from 'expo-file-system/legacy';
 import { GLOBAL_BIBLE_VERSIONS } from '../database/globalBibleCatalog';
+import { REMOTE_DB_VERSIONS, FILE_TO_REPO_MAP } from '../database/remoteBibleCatalog';
 
 export interface DownloadProgress {
   versionId: string;
@@ -112,7 +113,7 @@ for (const b of CANONICAL_BOOKS) {
 /**
  * 140 pre-compiled SQLite databases hosted on AI2TH/bible_db
  */
-export const AI2TH_DB_VERSIONS: Record<string, string> = {
+const BASE_AI2TH_DB_VERSIONS: Record<string, string> = {
   acv: 'ACV',
   akjv: 'AKJV',
   alb: 'Alb',
@@ -261,7 +262,11 @@ export const AI2TH_DB_VERSIONS: Record<string, string> = {
   wlc: 'WLC',
   wulfila: 'Wulfila',
   wycliffe: 'Wycliffe',
-  ylt: 'YLT',
+};
+
+export const AI2TH_DB_VERSIONS: Record<string, string> = {
+  ...BASE_AI2TH_DB_VERSIONS,
+  ...REMOTE_DB_VERSIONS,
 };
 
 export function getAi2thDbFileName(versionId: string): string | null {
@@ -379,11 +384,15 @@ function resolveDownloadUrl(versionId: string): { url: string; filename: string 
 
 function getOrderedRepos(candidateName: string): string[] {
   const norm = candidateName.trim().toLowerCase();
+  const directRepo = FILE_TO_REPO_MAP[candidateName] || FILE_TO_REPO_MAP[norm];
+
   const firstChar = norm[0] || 'a';
-  let targetPartition = 'bible_db_languages_a_f';
-  if (firstChar >= 'g' && firstChar <= 'm') targetPartition = 'bible_db_languages_g_m';
-  else if (firstChar >= 'n' && firstChar <= 's') targetPartition = 'bible_db_languages_n_s';
-  else if (firstChar >= 't' && firstChar <= 'z') targetPartition = 'bible_db_languages_t_z';
+  let targetPartition = directRepo || 'bible_db_languages_a_f';
+  if (!directRepo) {
+    if (firstChar >= 'g' && firstChar <= 'm') targetPartition = 'bible_db_languages_g_m';
+    else if (firstChar >= 'n' && firstChar <= 's') targetPartition = 'bible_db_languages_n_s';
+    else if (firstChar >= 't' && firstChar <= 'z') targetPartition = 'bible_db_languages_t_z';
+  }
 
   const ordered = [
     `https://raw.githubusercontent.com/AI2TH/${targetPartition}/main`,
