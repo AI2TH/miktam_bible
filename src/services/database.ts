@@ -175,14 +175,14 @@ export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
  */
 async function populateGlobalBibleCatalog(database: SQLite.SQLiteDatabase): Promise<void> {
   try {
-    const langCountRow = await database.getFirstAsync<{ count: number }>(
-      'SELECT COUNT(*) as count FROM bible_languages'
+    const versionCountRow = await database.getFirstAsync<{ count: number }>(
+      'SELECT COUNT(*) as count FROM bible_versions'
     );
-    if (langCountRow && langCountRow.count >= 2000) {
-      return; // Already populated
+    if (versionCountRow && versionCountRow.count >= 5000) {
+      return; // Already populated with complete multi-repo catalog
     }
 
-    console.log('[DB] Seeding global Bible catalog: 2,459 languages & 3,844 versions...');
+    console.log(`[DB] Seeding global Bible catalog: ${GLOBAL_LANGUAGES.length} languages & ${GLOBAL_BIBLE_VERSIONS.length} versions...`);
     await database.withTransactionAsync(async () => {
       // 1. Seed languages
       for (const lang of GLOBAL_LANGUAGES) {
@@ -192,7 +192,7 @@ async function populateGlobalBibleCatalog(database: SQLite.SQLiteDatabase): Prom
         );
       }
 
-      // 2. Seed all 3,844 translations
+      // 2. Seed all translations
       for (const v of GLOBAL_BIBLE_VERSIONS) {
         await database.runAsync(
           'INSERT OR IGNORE INTO bible_versions (id, name, language, is_downloaded, total_size_mb) VALUES (?, ?, ?, ?, ?)',
