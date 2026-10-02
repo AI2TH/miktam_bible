@@ -367,13 +367,34 @@ export function isVersionDownloadable(versionId: string): boolean {
   return true;
 }
 
-function resolveDownloadUrl(versionId: string): { url: string; filename: string } {
+function resolveDownloadUrl(versionId: string): { url: string; filename: string } | null {
   const norm = versionId.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const mapped = SCROLLMAPPER_VERSIONS[norm] || SCROLLMAPPER_VERSIONS[versionId.toLowerCase()] || 'KJV';
+  const mapped = SCROLLMAPPER_VERSIONS[norm] || SCROLLMAPPER_VERSIONS[versionId.toLowerCase()];
+  if (!mapped) return null;
   return {
     url: `${SCROLLMAPPER_BASE_URL}${mapped}.json`,
     filename: `${mapped}.json`,
   };
+}
+
+function getOrderedRepos(candidateName: string): string[] {
+  const norm = candidateName.trim().toLowerCase();
+  const firstChar = norm[0] || 'a';
+  let targetPartition = 'bible_db_languages_a_f';
+  if (firstChar >= 'g' && firstChar <= 'm') targetPartition = 'bible_db_languages_g_m';
+  else if (firstChar >= 'n' && firstChar <= 's') targetPartition = 'bible_db_languages_n_s';
+  else if (firstChar >= 't' && firstChar <= 'z') targetPartition = 'bible_db_languages_t_z';
+
+  const ordered = [
+    `https://raw.githubusercontent.com/AI2TH/${targetPartition}/main`,
+    'https://raw.githubusercontent.com/AI2TH/bible_db/main',
+    'https://cdn.jsdelivr.net/gh/AI2TH/bible_db@main',
+    'https://raw.githubusercontent.com/AI2TH/bible_db_languages_a_f/main',
+    'https://raw.githubusercontent.com/AI2TH/bible_db_languages_g_m/main',
+    'https://raw.githubusercontent.com/AI2TH/bible_db_languages_n_s/main',
+    'https://raw.githubusercontent.com/AI2TH/bible_db_languages_t_z/main',
+  ];
+  return Array.from(new Set(ordered));
 }
 
 /**
@@ -392,20 +413,12 @@ async function downloadViaDatabaseAttach(
   const primaryName = candidateFileNames[0] || normVersion;
   report('downloading', 10, `Downloading ${primaryName} database...`);
 
-  const repos = [
-    'https://raw.githubusercontent.com/AI2TH/bible_db/main',
-    'https://cdn.jsdelivr.net/gh/AI2TH/bible_db@main',
-    'https://raw.githubusercontent.com/AI2TH/bible_db_languages_a_f/main',
-    'https://raw.githubusercontent.com/AI2TH/bible_db_languages_g_m/main',
-    'https://raw.githubusercontent.com/AI2TH/bible_db_languages_n_s/main',
-    'https://raw.githubusercontent.com/AI2TH/bible_db_languages_t_z/main',
-  ];
-
   const candidateUrls: { url: string; fileName: string }[] = [];
   const seenUrls = new Set<string>();
 
   for (const fn of candidateFileNames) {
     if (!fn) continue;
+    const repos = getOrderedRepos(fn);
     for (const repo of repos) {
       const u = `${repo}/${encodeURIComponent(fn)}.db`;
       if (!seenUrls.has(u)) {
@@ -539,7 +552,11 @@ async function downloadViaJson(
 
   report('downloading', 5, 'Connecting to Scripture repository...');
 
-  const { url } = resolveDownloadUrl(normVersion);
+  const resolved = resolveDownloadUrl(normVersion);
+  if (!resolved) {
+    throw new Error(`Translation "${versionId}" is not available in the public domain JSON dataset.`);
+  }
+  const { url } = resolved;
   console.log(`[BibleDownloadService] Downloading ${normVersion} JSON from ${url}`);
 
   const response = await fetch(url);

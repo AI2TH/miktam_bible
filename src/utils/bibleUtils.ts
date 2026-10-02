@@ -111,4 +111,30 @@ export function parseHighlightedText(text: string): HighlightSegment[] {
   }).filter(seg => seg.text.length > 0);
 }
 
+import { GLOBAL_BIBLE_VERSIONS } from '../database/globalBibleCatalog';
 
+let versionAbbrMap: Map<string, string> | null = null;
+
+/**
+ * Resolves a version ID (including numeric IDs like '3095') to its standard display abbreviation
+ * (e.g. 'KFI', 'KJV', 'ASV', 'RVR1960').
+ */
+export function getVersionAbbreviation(versionId?: string | null): string {
+  if (!versionId) return 'KJV';
+  const norm = versionId.toLowerCase().trim();
+  if (!norm || norm === 'kjv') return 'KJV';
+
+  if (!versionAbbrMap) {
+    versionAbbrMap = new Map();
+    for (const v of GLOBAL_BIBLE_VERSIONS) {
+      if (v.abbreviation) {
+        versionAbbrMap.set(v.id.toLowerCase(), v.abbreviation.toUpperCase());
+      }
+    }
+  }
+
+  const cached = versionAbbrMap.get(norm);
+  if (cached) return cached;
+
+  return versionId.toUpperCase();
+}

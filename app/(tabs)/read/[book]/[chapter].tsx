@@ -25,6 +25,7 @@ import { useReaderStore, CHAPTERS_PER_BOOK } from '../../../../src/stores/reader
 import { markChapterAsRead } from '../../../../src/services/readingProgressService';
 import { BOOK_NAMES } from '../../../../src/utils/constants';
 import { getBookName } from '../../../../src/utils/bookTranslations';
+import { getVersionAbbreviation } from '../../../../src/utils/bibleUtils';
 import { getAllVersions } from '../../../../src/services/bibleService';
 import type { BibleVersion } from '../../../../src/types/bible';
 import type { Bookmark } from '../../../../src/types/user';
@@ -194,7 +195,7 @@ export default function ChapterReaderScreen() {
               ]}
             >
               <Text variant="caption" color="primary" style={styles.versionBadgeText}>
-                {(currentVersionId || 'KJV').toUpperCase()}
+                {getVersionAbbreviation(currentVersionId)}
               </Text>
             </TouchableOpacity>
             <View style={[styles.fontControlGroup, { borderColor: colors.border, backgroundColor: colors.surface }]}>

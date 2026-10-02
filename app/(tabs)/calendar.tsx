@@ -11,7 +11,7 @@ import { getPromiseVerse, savePromiseVerse, deletePromiseVerse, SUGGESTED_PROMIS
 import { getVerse } from '../../src/services/bibleService';
 import { useReaderStore } from '../../src/stores/readerStore';
 import { BOOK_NAMES } from '../../src/utils/constants';
-import { cleanVerseText } from '../../src/utils/bibleUtils';
+import { cleanVerseText, getVersionAbbreviation } from '../../src/utils/bibleUtils';
 import { getBookName } from '../../src/utils/bookTranslations';
 import { BottomSheet } from '../../src/components/ui/BottomSheet';
 import { Card } from '../../src/components/ui/Card';
@@ -432,7 +432,7 @@ export default function CalendarScreen() {
           {selectorMode === 'custom' && (
             <View style={{ gap: spacing.md }}>
               <Text variant="bodySmall" color="textSecondary">
-                Enter coordinates for any verse in the Bible. It will be fetched offline from your current translation ({currentVersionId.toUpperCase()}).
+                Enter coordinates for any verse in the Bible. It will be fetched offline from your current translation ({getVersionAbbreviation(currentVersionId)}).
               </Text>
 
               {/* Book Picker list */}
