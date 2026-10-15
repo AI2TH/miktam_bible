@@ -10,6 +10,7 @@ import { VersionPicker } from '../../../src/components/scripture/VersionPicker';
 import { BottomSheet } from '../../../src/components/ui/BottomSheet';
 import { useReaderStore } from '../../../src/stores/readerStore';
 import { getAllVersions } from '../../../src/services/bibleService';
+import { GLOBAL_LANGUAGES } from '../../../src/database/globalBibleCatalog';
 import type { BibleVersion } from '../../../src/types/bible';
 
 export default function BookPickerScreen() {
@@ -85,7 +86,7 @@ export default function BookPickerScreen() {
               ]}
             >
               <Text variant="caption" color="primary" style={{ fontWeight: 'bold' }}>
-                🌐 2,459 Langs ▾
+                🌐 {GLOBAL_LANGUAGES.length.toLocaleString()} Langs ▾
               </Text>
             </View>
           </TouchableOpacity>
