@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, StyleSheet, TextInput, ScrollView, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TextInput, ScrollView, TouchableOpacity, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useTheme } from '../../../../src/theme';
@@ -41,7 +41,20 @@ export default function ChapterReaderScreen() {
   const chapterNumber = isNaN(parsedChapter) ? 1 : Math.max(1, Math.min(maxChapters, parsedChapter));
 
   // Zustand Store sync
-  const { navigateTo, currentVersionId, fontSize, setFontSize, setVersion, currentBookNumber, currentChapter } = useReaderStore();
+  const {
+    navigateTo,
+    currentVersionId,
+    fontSize,
+    setFontSize,
+    setVersion,
+    currentBookNumber,
+    currentChapter,
+    dualLanguageEnabled,
+    secondaryVersionId,
+    setDualLanguageEnabled,
+    setSecondaryVersion,
+    swapLanguages,
+  } = useReaderStore();
   
   // Update state store with current position
   useEffect(() => {
@@ -51,7 +64,7 @@ export default function ChapterReaderScreen() {
   }, [bookNumber, chapterNumber, navigateTo, currentVersionId]);
 
   // Hook layers
-  const { verses, loading } = useBibleReader();
+  const { verses, secondaryVerseMap, loading } = useBibleReader();
   const { add: addBookmark, remove: removeBookmark, bookmarks, refetch: refetchBookmarks } = useBookmarks();
   const { getNote, save: saveNote, remove: removeNote } = useNotes();
   const { originalWords, loadOriginalWords } = useConcordance();
@@ -70,6 +83,7 @@ export default function ChapterReaderScreen() {
   // Detail sheet states
   const [strongsNumber, setStrongsNumber] = useState<string | null>(null);
   const [versionSheetVisible, setVersionSheetVisible] = useState(false);
+  const [dualSheetVisible, setDualSheetVisible] = useState(false);
 
   // Load active versions list
   useEffect(() => {
@@ -198,6 +212,36 @@ export default function ChapterReaderScreen() {
                 {getVersionAbbreviation(currentVersionId)}
               </Text>
             </TouchableOpacity>
+
+            {/* Dual Language Badge */}
+            <TouchableOpacity
+              onPress={() => setDualSheetVisible(true)}
+              style={[
+                styles.dualBadge,
+                dualLanguageEnabled
+                  ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                  : { backgroundColor: colors.surface, borderColor: colors.border }
+              ]}
+            >
+              <Ionicons
+                name="globe-outline"
+                size={12}
+                color={dualLanguageEnabled ? colors.textInverse : colors.primary}
+                style={{ marginRight: 3 }}
+              />
+              <Text
+                variant="caption"
+                style={[
+                  styles.dualBadgeText,
+                  { color: dualLanguageEnabled ? colors.textInverse : colors.primary }
+                ]}
+              >
+                {dualLanguageEnabled && secondaryVersionId
+                  ? getVersionAbbreviation(secondaryVersionId)
+                  : '+ Dual'}
+              </Text>
+            </TouchableOpacity>
+
             <View style={[styles.fontControlGroup, { borderColor: colors.border, backgroundColor: colors.surface }]}>
               <TouchableOpacity
                 onPress={() => setFontSize(Math.max(12, fontSize - 2))}
@@ -229,6 +273,9 @@ export default function ChapterReaderScreen() {
         onVerseTap={handleVerseTap}
         onVerseLongPress={handleVerseLongPress}
         fontSize={fontSize}
+        secondaryVerseMap={secondaryVerseMap}
+        secondaryVersionAbbr={secondaryVersionId ? getVersionAbbreviation(secondaryVersionId) : undefined}
+        isDualMode={dualLanguageEnabled}
         onNextChapter={() => {
           const maxChapters = CHAPTERS_PER_BOOK[currentBookNumber] || 50;
           if (currentChapter < maxChapters) {
@@ -413,6 +460,164 @@ export default function ChapterReaderScreen() {
           onClose={() => setVersionSheetVisible(false)}
         />
       </BottomSheet>
+
+      {/* Dual Language Sheet */}
+      <BottomSheet
+        visible={dualSheetVisible}
+        onClose={() => setDualSheetVisible(false)}
+        title="Dual Language (Bilingual)"
+        maxHeight="85%"
+        scrollable={true}
+      >
+        <View style={styles.sheetSection}>
+          {/* Enable / Disable Toggle Row */}
+          <View style={styles.dualToggleRow}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text variant="h3" style={{ fontSize: 16, fontWeight: '700', marginBottom: 2 }}>
+                Dual Language Mode
+              </Text>
+              <Text variant="bodySmall" color="textSecondary">
+                Display two translations together verse-by-verse
+              </Text>
+            </View>
+            <Switch
+              value={dualLanguageEnabled}
+              onValueChange={setDualLanguageEnabled}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor={colors.surface}
+            />
+          </View>
+
+          {/* Primary & Secondary Language Indicator with Swap */}
+          <View
+            style={[
+              styles.dualStatusBox,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                borderRadius: borderRadius.md,
+                padding: spacing.md,
+                marginTop: spacing.md,
+              },
+            ]}
+          >
+            <View style={styles.dualStatusRow}>
+              <View style={styles.dualStatusCol}>
+                <Text variant="caption" color="textTertiary" style={{ textTransform: 'uppercase', fontWeight: '600', fontSize: 11 }}>
+                  Primary
+                </Text>
+                <Text variant="body" color="primary" style={{ fontWeight: '700', marginTop: 2 }}>
+                  {getVersionAbbreviation(currentVersionId)}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                onPress={() => swapLanguages()}
+                style={[
+                  styles.swapButton,
+                  {
+                    backgroundColor: colors.primary + '15',
+                    borderColor: colors.primary,
+                  },
+                ]}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="swap-horizontal" size={18} color={colors.primary} />
+                <Text variant="caption" color="primary" style={{ fontWeight: '700', marginLeft: 4 }}>
+                  Swap
+                </Text>
+              </TouchableOpacity>
+
+              <View style={[styles.dualStatusCol, { alignItems: 'flex-end' }]}>
+                <Text variant="caption" color="textTertiary" style={{ textTransform: 'uppercase', fontWeight: '600', fontSize: 11 }}>
+                  Secondary
+                </Text>
+                <Text variant="body" color="primary" style={{ fontWeight: '700', marginTop: 2 }}>
+                  {secondaryVersionId ? getVersionAbbreviation(secondaryVersionId) : 'None'}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <Divider style={{ marginVertical: spacing.lg }} />
+
+          {/* Secondary Version Picker */}
+          <Text variant="h3" style={[styles.sheetLabel, { marginBottom: spacing.xs }]}>
+            Select Secondary Translation
+          </Text>
+          <Text variant="bodySmall" color="textSecondary" style={{ marginBottom: spacing.md }}>
+            Choose a downloaded translation to display alongside your primary Bible:
+          </Text>
+
+          <View style={{ gap: spacing.sm, paddingBottom: spacing.xl }}>
+            {downloadedVersions.length === 0 ? (
+              <View style={{ paddingVertical: spacing.lg, alignItems: 'center' }}>
+                <Text variant="bodySmall" color="textTertiary">
+                  No downloaded translations found.
+                </Text>
+              </View>
+            ) : (
+              downloadedVersions.map((v) => {
+                const isSelected = secondaryVersionId?.toLowerCase() === v.id.toLowerCase();
+                const isPrimary = currentVersionId?.toLowerCase() === v.id.toLowerCase();
+
+                return (
+                  <TouchableOpacity
+                    key={v.id}
+                    onPress={() => {
+                      if (isPrimary) {
+                        swapLanguages();
+                      } else {
+                        setSecondaryVersion(v.id);
+                        if (!dualLanguageEnabled) {
+                          setDualLanguageEnabled(true);
+                        }
+                      }
+                    }}
+                    style={[
+                      styles.versionOption,
+                      {
+                        borderColor: isSelected ? colors.primary : colors.border,
+                        backgroundColor: isSelected ? colors.primary + '12' : colors.surface,
+                        borderRadius: borderRadius.md,
+                        padding: spacing.md,
+                      },
+                    ]}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text
+                          variant="body"
+                          style={{
+                            fontWeight: '700',
+                            color: isSelected ? colors.primary : colors.textPrimary,
+                          }}
+                        >
+                          {v.name} ({getVersionAbbreviation(v.id)})
+                        </Text>
+                        {isPrimary && (
+                          <View style={[styles.primaryTag, { backgroundColor: colors.border }]}>
+                            <Text variant="caption" style={{ fontSize: 10, fontWeight: '600' }}>
+                              Primary
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text variant="caption" color="textSecondary" style={{ marginTop: 2 }}>
+                        {v.language.toUpperCase()} • {v.id.toUpperCase()}
+                      </Text>
+                    </View>
+
+                    {isSelected && (
+                      <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })
+            )}
+          </View>
+        </View>
+      </BottomSheet>
     </SafeAreaView>
   );
 }
@@ -433,6 +638,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   versionBadgeText: {
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  dualBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  dualBadgeText: {
     fontWeight: '700',
     fontSize: 12,
   },
@@ -465,8 +682,9 @@ const styles = StyleSheet.create({
   },
   toolRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
   },
   toolBtn: {
     flex: 1,
@@ -478,5 +696,41 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Outfit',
     textAlignVertical: 'top',
+  },
+  dualToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  dualStatusBox: {
+    borderWidth: 1,
+  },
+  dualStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dualStatusCol: {
+    flex: 1,
+  },
+  swapButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginHorizontal: 8,
+  },
+  versionOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  primaryTag: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
   },
 });

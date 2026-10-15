@@ -17,6 +17,9 @@ interface ChapterViewProps {
   onPrevChapter?: () => void;
   bookTitle?: string;
   currentChapter?: number;
+  secondaryVerseMap?: Map<number, Verse>;
+  secondaryVersionAbbr?: string;
+  isDualMode?: boolean;
 }
 
 export function ChapterView({
@@ -30,6 +33,9 @@ export function ChapterView({
   onPrevChapter,
   bookTitle,
   currentChapter,
+  secondaryVerseMap,
+  secondaryVersionAbbr,
+  isDualMode = false,
 }: ChapterViewProps) {
   const { colors, spacing, borderRadius } = useTheme();
 
@@ -113,6 +119,7 @@ export function ChapterView({
       renderItem={({ item }) => {
         const highlightColor = bookmarkMap.get(item.verseNumber);
         const isSelected = selectedVerseNumber === item.verseNumber;
+        const secVerse = secondaryVerseMap?.get(item.verseNumber) || null;
 
         return (
           <VerseText
@@ -122,6 +129,9 @@ export function ChapterView({
             fontSize={fontSize}
             onTap={() => onVerseTap(item.verseNumber)}
             onLongPress={() => onVerseLongPress(item.verseNumber)}
+            secondaryVerse={secVerse}
+            secondaryVersionAbbr={secondaryVersionAbbr}
+            isDualMode={isDualMode}
           />
         );
       }}
