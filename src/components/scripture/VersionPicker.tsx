@@ -33,6 +33,7 @@ interface VersionPickerProps {
 
 const TOP_LANGUAGES = [
   { code: 'all', label: 'All' },
+  { code: 'downloaded', label: '✓ Downloaded' },
   { code: 'eng', label: 'English' },
   { code: 'spa', label: 'Spanish' },
   { code: 'fra', label: 'French' },
@@ -153,8 +154,11 @@ export function VersionPicker({
     const langFilter = (selectedLanguageCode || 'all').trim().toLowerCase();
 
     return GLOBAL_BIBLE_VERSIONS.filter((v) => {
-      // Language filter
-      if (langFilter !== 'all') {
+      // Offline / Downloaded filter
+      if (langFilter === 'downloaded') {
+        const isDl = downloadedSet.has(v.id.toLowerCase()) || v.id.toLowerCase() === 'kjv';
+        if (!isDl) return false;
+      } else if (langFilter !== 'all') {
         const vLang = (v.language || '').toLowerCase().trim();
         const vLangName = (v.languageName || '').toLowerCase().trim();
         const aliases = LANGUAGE_CODE_MAP[langFilter];
@@ -176,7 +180,7 @@ export function VersionPicker({
         v.id.toLowerCase().includes(q)
       );
     });
-  }, [searchQuery, selectedLanguageCode]);
+  }, [searchQuery, selectedLanguageCode, downloadedSet]);
 
   // Filtered languages based on search
   const filteredLanguages = useMemo(() => {
@@ -290,7 +294,7 @@ export function VersionPicker({
                 {item.name} ({item.abbreviation})
               </Text>
               <Text variant="caption" color="textTertiary" style={{ marginTop: 2 }}>
-                Language: {item.languageName} • Public Domain / Open Access
+                Language: {item.languageName} • {item.source ? `AI2TH/${item.source}` : 'AI2TH Bible DB'}
               </Text>
             </View>
 
@@ -413,8 +417,8 @@ export function VersionPicker({
           onChangeText={setSearchQuery}
           placeholder={
             activeTab === 'versions'
-              ? 'Search 3,844 Bible versions & translations...'
-              : 'Search 2,459 world languages...'
+              ? `Search ${GLOBAL_BIBLE_VERSIONS.length.toLocaleString()} Bible versions & translations...`
+              : `Search ${GLOBAL_LANGUAGES.length.toLocaleString()} world languages...`
           }
           placeholderTextColor={colors.textTertiary}
           style={[styles.searchInput, { color: colors.textPrimary }]}
@@ -459,7 +463,7 @@ export function VersionPicker({
             color={activeTab === 'languages' ? 'primary' : 'textSecondary'}
             style={{ fontWeight: activeTab === 'languages' ? 'bold' : 'normal' }}
           >
-            2,459 Languages
+            {GLOBAL_LANGUAGES.length.toLocaleString()} Languages
           </Text>
         </TouchableOpacity>
       </View>
