@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, TouchableOpacity } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useTheme } from '../../theme';
 import { Text } from '../ui/Text';
 import type { Verse } from '../../types/bible';
@@ -12,6 +12,9 @@ interface VerseTextProps {
   onTap: () => void;
   onLongPress: () => void;
   fontSize: number;
+  secondaryVerse?: Verse | null;
+  secondaryVersionAbbr?: string;
+  isDualMode?: boolean;
 }
 
 export function VerseText({
@@ -21,6 +24,9 @@ export function VerseText({
   onTap,
   onLongPress,
   fontSize,
+  secondaryVerse,
+  secondaryVersionAbbr,
+  isDualMode = false,
 }: VerseTextProps) {
   const { colors, spacing, borderRadius } = useTheme();
 
@@ -66,9 +72,62 @@ export function VerseText({
           {verse.verseNumber}{' '}
         </Text>
 
-        {/* Verse text */}
+        {/* Primary verse text */}
         {cleanVerseText(verse.text)}
       </Text>
+
+      {/* Secondary translation text (Dual Language Mode) */}
+      {isDualMode && secondaryVersionAbbr && (
+        <View
+          style={[
+            styles.secondaryBlock,
+            {
+              backgroundColor: colors.surfaceMuted + '80',
+              borderColor: colors.border,
+              borderRadius: borderRadius.sm,
+              paddingHorizontal: spacing.sm,
+              paddingVertical: spacing.xs + 2,
+              marginTop: spacing.xs + 2,
+            },
+          ]}
+        >
+          <View style={styles.secondaryHeader}>
+            <View
+              style={[
+                styles.badgePill,
+                {
+                  backgroundColor: colors.primary + '20',
+                  borderRadius: borderRadius.sm,
+                  paddingHorizontal: 5,
+                  paddingVertical: 1,
+                },
+              ]}
+            >
+              <Text
+                variant="caption"
+                color="primary"
+                style={{ fontSize: 10, fontWeight: 'bold' }}
+              >
+                {secondaryVersionAbbr.toUpperCase()}
+              </Text>
+            </View>
+          </View>
+          <Text
+            variant="scripture"
+            color={secondaryVerse ? 'textSecondary' : 'textTertiary'}
+            style={[
+              styles.secondaryText,
+              {
+                fontSize: Math.max(12, fontSize * 0.92),
+                lineHeight: Math.max(12, fontSize * 0.92) * 1.55,
+                fontStyle: secondaryVerse ? 'normal' : 'italic',
+              },
+            ]}
+          >
+            {secondaryVerse ? cleanVerseText(secondaryVerse.text) : 'Verse not available in this translation.'}
+          </Text>
+        </View>
+      )}
     </TouchableOpacity>
   );
 }
@@ -83,4 +142,18 @@ const styles = StyleSheet.create({
   scriptureText: {
     // Standard text wraps perfectly on its own
   },
+  secondaryBlock: {
+    borderLeftWidth: 2,
+  },
+  secondaryHeader: {
+    flexDirection: 'row',
+    marginBottom: 2,
+  },
+  badgePill: {
+    alignSelf: 'flex-start',
+  },
+  secondaryText: {
+    marginTop: 2,
+  },
 });
+

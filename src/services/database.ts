@@ -160,6 +160,15 @@ export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
     }
     // Also ensure aldhelm has no non-Psalms verses if previously seeded
     await db.runAsync("DELETE FROM verses WHERE LOWER(version_id) = 'aldhelm' AND book_number != 19;");
+
+    // Automatically correct any non-KJV versions incorrectly marked as downloaded if they have no verses
+    await db.runAsync(`
+      UPDATE bible_versions
+      SET is_downloaded = 0, download_date = NULL
+      WHERE LOWER(id) NOT IN ('kjv')
+        AND is_downloaded = 1
+        AND id NOT IN (SELECT DISTINCT version_id FROM verses);
+    `);
   } catch (cleanErr) {
     console.warn('[DB] Cleanup notice:', cleanErr);
   }

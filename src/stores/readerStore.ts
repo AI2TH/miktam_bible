@@ -24,6 +24,10 @@ interface ReaderState {
   showParallelView: boolean;
   parallelVersionId: string | null;
 
+  // Dual language / Bilingual reading mode
+  dualLanguageEnabled: boolean;
+  secondaryVersionId: string | null;
+
   // Actions
   setVersion: (versionId: string) => void;
   navigateTo: (bookNumber: number, chapter: number) => void;
@@ -34,6 +38,10 @@ interface ReaderState {
   toggleInterlinear: () => void;
   toggleCrossRefs: () => void;
   toggleParallelView: (versionId?: string) => void;
+  setDualLanguageEnabled: (enabled: boolean) => void;
+  setSecondaryVersion: (versionId: string | null) => void;
+  toggleDualLanguage: (versionId?: string) => void;
+  swapLanguages: () => void;
 }
 
 export const useReaderStore = create<ReaderState>((set, get) => ({
@@ -47,6 +55,9 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   showCrossRefs: false,
   showParallelView: false,
   parallelVersionId: null,
+
+  dualLanguageEnabled: false,
+  secondaryVersionId: 'kjv',
 
   setVersion: (versionId) => set({ currentVersionId: (versionId || 'kjv').toLowerCase().trim() }),
 
@@ -97,4 +108,23 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     showParallelView: !s.showParallelView,
     parallelVersionId: versionId || s.parallelVersionId,
   })),
+  setDualLanguageEnabled: (enabled) => set({ dualLanguageEnabled: enabled }),
+  setSecondaryVersion: (versionId) => set({ secondaryVersionId: versionId ? versionId.toLowerCase().trim() : null }),
+  toggleDualLanguage: (versionId) => set((s) => {
+    const nextEnabled = !s.dualLanguageEnabled;
+    const defaultSecondary = (s.currentVersionId === 'kjv' ? 'kan' : 'kjv');
+    return {
+      dualLanguageEnabled: nextEnabled,
+      secondaryVersionId: versionId ? versionId.toLowerCase().trim() : (s.secondaryVersionId || defaultSecondary),
+    };
+  }),
+  swapLanguages: () => set((s) => {
+    if (!s.secondaryVersionId) return s;
+    const oldPrimary = s.currentVersionId;
+    const oldSecondary = s.secondaryVersionId;
+    return {
+      currentVersionId: oldSecondary,
+      secondaryVersionId: oldPrimary,
+    };
+  }),
 }));
