@@ -1,9 +1,9 @@
 import React from 'react';
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View, Platform } from 'react-native';
 import { useTheme } from '../../theme';
 import { Text } from '../ui/Text';
 import type { Verse } from '../../types/bible';
-import { cleanVerseText } from '../../utils/bibleUtils';
+import { cleanVerseText, isComplexScript } from '../../utils/bibleUtils';
 
 interface VerseTextProps {
   verse: Verse;
@@ -30,6 +30,14 @@ export function VerseText({
 }: VerseTextProps) {
   const { colors, spacing, borderRadius } = useTheme();
 
+  const isPrimaryComplex = isComplexScript(verse.text);
+  const primaryLineHeight = isPrimaryComplex
+    ? Math.round(fontSize * 1.85)
+    : Math.round(fontSize * 1.6);
+  const primaryFontFamily = isPrimaryComplex
+    ? Platform.select({ android: 'sans-serif', default: undefined })
+    : undefined;
+
   return (
     <TouchableOpacity
       activeOpacity={0.8}
@@ -53,19 +61,21 @@ export function VerseText({
           styles.scriptureText,
           {
             fontSize,
-            lineHeight: fontSize * 1.6,
+            lineHeight: primaryLineHeight,
+            ...(primaryFontFamily ? { fontFamily: primaryFontFamily } : {}),
           },
         ]}
       >
-        {/* Gold verse number */}
+        {/* Gold verse number: rendered as an inline span without fixed lineHeight */}
         <Text
-          variant="verseNumber"
+          inline
           color="gold"
           style={[
             styles.verseNumber,
             {
-              fontSize: fontSize * 0.75,
+              fontSize: Math.round(fontSize * 0.72),
               fontWeight: 'bold',
+              ...(primaryFontFamily ? { fontFamily: primaryFontFamily } : {}),
             },
           ]}
         >
@@ -77,57 +87,70 @@ export function VerseText({
       </Text>
 
       {/* Secondary translation text (Dual Language Mode) */}
-      {isDualMode && secondaryVersionAbbr && (
-        <View
-          style={[
-            styles.secondaryBlock,
-            {
-              backgroundColor: colors.surfaceMuted + '80',
-              borderColor: colors.border,
-              borderRadius: borderRadius.sm,
-              paddingHorizontal: spacing.sm,
-              paddingVertical: spacing.xs + 2,
-              marginTop: spacing.xs + 2,
-            },
-          ]}
-        >
-          <View style={styles.secondaryHeader}>
-            <View
-              style={[
-                styles.badgePill,
-                {
-                  backgroundColor: colors.primary + '20',
-                  borderRadius: borderRadius.sm,
-                  paddingHorizontal: 5,
-                  paddingVertical: 1,
-                },
-              ]}
-            >
-              <Text
-                variant="caption"
-                color="primary"
-                style={{ fontSize: 10, fontWeight: 'bold' }}
-              >
-                {secondaryVersionAbbr.toUpperCase()}
-              </Text>
-            </View>
-          </View>
-          <Text
-            variant="scripture"
-            color={secondaryVerse ? 'textSecondary' : 'textTertiary'}
+      {isDualMode && secondaryVersionAbbr && (() => {
+        const secText = secondaryVerse ? cleanVerseText(secondaryVerse.text) : 'Verse not available in this translation.';
+        const isSecComplex = secondaryVerse ? isComplexScript(secondaryVerse.text) : false;
+        const secFontSize = Math.max(12, Math.round(fontSize * 0.92));
+        const secLineHeight = isSecComplex
+          ? Math.round(secFontSize * 1.85)
+          : Math.round(secFontSize * 1.55);
+        const secFontFamily = isSecComplex
+          ? Platform.select({ android: 'sans-serif', default: undefined })
+          : undefined;
+
+        return (
+          <View
             style={[
-              styles.secondaryText,
+              styles.secondaryBlock,
               {
-                fontSize: Math.max(12, fontSize * 0.92),
-                lineHeight: Math.max(12, fontSize * 0.92) * 1.55,
-                fontStyle: secondaryVerse ? 'normal' : 'italic',
+                backgroundColor: colors.surfaceMuted + '80',
+                borderColor: colors.border,
+                borderRadius: borderRadius.sm,
+                paddingHorizontal: spacing.sm,
+                paddingVertical: spacing.xs + 3,
+                marginTop: spacing.xs + 4,
               },
             ]}
           >
-            {secondaryVerse ? cleanVerseText(secondaryVerse.text) : 'Verse not available in this translation.'}
-          </Text>
-        </View>
-      )}
+            <View style={styles.secondaryHeader}>
+              <View
+                style={[
+                  styles.badgePill,
+                  {
+                    backgroundColor: colors.primary + '20',
+                    borderRadius: borderRadius.sm,
+                    paddingHorizontal: 5,
+                    paddingVertical: 1,
+                  },
+                ]}
+              >
+                <Text
+                  variant="caption"
+                  color="primary"
+                  style={{ fontSize: 10, fontWeight: 'bold' }}
+                >
+                  {secondaryVersionAbbr.toUpperCase()}
+                </Text>
+              </View>
+            </View>
+            <Text
+              variant="scripture"
+              color={secondaryVerse ? 'textSecondary' : 'textTertiary'}
+              style={[
+                styles.secondaryText,
+                {
+                  fontSize: secFontSize,
+                  lineHeight: secLineHeight,
+                  fontStyle: secondaryVerse ? 'normal' : 'italic',
+                  ...(secFontFamily ? { fontFamily: secFontFamily } : {}),
+                },
+              ]}
+            >
+              {secText}
+            </Text>
+          </View>
+        );
+      })()}
     </TouchableOpacity>
   );
 }

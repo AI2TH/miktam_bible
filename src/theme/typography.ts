@@ -26,7 +26,7 @@ export const textStyles = {
   scripture: { fontFamily: fonts.scripture, fontSize: 18, fontWeight: '400' as const, lineHeight: 32 },
   scriptureSmall: { fontFamily: fonts.scripture, fontSize: 15, fontWeight: '400' as const, lineHeight: 26 },
   scriptureLarge: { fontFamily: fonts.scripture, fontSize: 22, fontWeight: '400' as const, lineHeight: 38 },
-  verseNumber: { fontFamily: fonts.body, fontSize: 12, fontWeight: '700' as const, lineHeight: 18 },
+  verseNumber: { fontFamily: fonts.body, fontSize: 12, fontWeight: '700' as const },
   strongsNumber: { fontFamily: fonts.mono, fontSize: 12, fontWeight: '500' as const, lineHeight: 16 },
   originalLanguage: { fontFamily: fonts.body, fontSize: 20, fontWeight: '400' as const, lineHeight: 28 },
   transliteration: { fontFamily: fonts.body, fontSize: 13, fontWeight: '400' as const, lineHeight: 18, fontStyle: 'italic' as const },

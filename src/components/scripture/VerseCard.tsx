@@ -39,6 +39,7 @@ export function VerseCard({
           {segments.map((seg, i) => (
             <Text
               key={i}
+              inline
               style={seg.isHighlighted ? { fontWeight: '700', color: colors.primary } : undefined}
             >
               {seg.text}
