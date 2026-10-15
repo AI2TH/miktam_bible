@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, ActivityIndicator, FlatList } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, FlatList, Platform } from 'react-native';
 import { useTheme } from '../../theme';
 import { Text } from '../ui/Text';
 import { Card } from '../ui/Card';
 import { getVerse } from '../../services/bibleService';
-import { cleanVerseText, getVersionAbbreviation } from '../../utils/bibleUtils';
+import { cleanVerseText, getVersionAbbreviation, isComplexScript } from '../../utils/bibleUtils';
 import type { BibleVersion, Verse } from '../../types/bible';
 
 interface ParallelViewProps {
@@ -39,17 +39,32 @@ const TranslationCard = React.memo(({ item, fontSize, colors, spacing }: {
         <View style={styles.loadingContainer}>
           <ActivityIndicator color={colors.primary} size="small" />
         </View>
-      ) : item.verse ? (
-        <Text
-          variant="scripture"
-          style={[
-            styles.verseText,
-            { fontSize: fontSize - 1, lineHeight: (fontSize - 1) * 1.6 },
-          ]}
-        >
-          {cleanVerseText(item.verse.text)}
-        </Text>
-      ) : (
+      ) : item.verse ? (() => {
+        const isComplex = isComplexScript(item.verse.text);
+        const pFontSize = fontSize - 1;
+        const pLineHeight = isComplex
+          ? Math.round(pFontSize * 1.85)
+          : Math.round(pFontSize * 1.6);
+        const pFontFamily = isComplex
+          ? Platform.select({ android: 'sans-serif', default: undefined })
+          : undefined;
+
+        return (
+          <Text
+            variant="scripture"
+            style={[
+              styles.verseText,
+              {
+                fontSize: pFontSize,
+                lineHeight: pLineHeight,
+                ...(pFontFamily ? { fontFamily: pFontFamily } : {}),
+              },
+            ]}
+          >
+            {cleanVerseText(item.verse.text)}
+          </Text>
+        );
+      })() : (
         <Text variant="caption" color="textTertiary">
           Verse not available in this version.
         </Text>

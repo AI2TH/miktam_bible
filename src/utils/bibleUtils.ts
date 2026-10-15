@@ -57,6 +57,25 @@ export function formatScriptureRef(ref: VerseRef, versionIdOrLang?: string): str
   return `${bookName} ${ref.chapter}:${ref.verseNumber}`;
 }
 
+/**
+ * Detects if a text contains non-Latin complex scripts (Indic, Thai, Arabic, CJK, etc.)
+ * that require system font fallback and generous line heights to prevent overlapping diacritics.
+ */
+export function isComplexScript(text?: string | null): boolean {
+  if (!text) return false;
+  // Unicode ranges:
+  // \u0900-\u0D7F: Devanagari, Bengali, Gurmukhi, Gujarati, Oriya, Tamil, Telugu, Kannada, Malayalam
+  // \u0D80-\u0DFF: Sinhala
+  // \u0E00-\u0E7F: Thai
+  // \u0E80-\u0EFF: Lao
+  // \u0F00-\u0FFF: Tibetan
+  // \u1000-\u109F: Myanmar
+  // \u0600-\u06FF: Arabic
+  // \u0590-\u05FF: Hebrew
+  // \u4E00-\u9FFF: CJK
+  return /[\u0900-\u109F\u0600-\u06FF\u0590-\u05FF\u4E00-\u9FFF]/.test(text);
+}
+
 /** Strips Strong's tags, superscript footnotes, and HTML/XML tags from verse text */
 export function cleanVerseText(text: string): string {
   if (!text) return '';
