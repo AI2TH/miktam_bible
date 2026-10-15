@@ -178,7 +178,7 @@ async function populateGlobalBibleCatalog(database: SQLite.SQLiteDatabase): Prom
     const versionCountRow = await database.getFirstAsync<{ count: number }>(
       'SELECT COUNT(*) as count FROM bible_versions'
     );
-    if (versionCountRow && versionCountRow.count >= 5000) {
+    if (versionCountRow && versionCountRow.count >= 5600) {
       return; // Already populated with complete multi-repo catalog
     }
 
