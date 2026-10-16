@@ -6,7 +6,13 @@
 
 <p align="center">
   <strong>Your Offline Bible Study Companion</strong><br/>
-  <em>25 translations · AI assistant · Strong's concordance · voice memos — all running 100% offline on your device.</em>
+  <em>5,600+ translations · AI assistant · Strong's concordance · reading plans — 100% offline.</em>
+</p>
+
+<p align="center">
+  <a href="https://play.google.com/store/apps/details?id=miktam.bible">
+    <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" height="55" />
+  </a>
 </p>
 
 <p align="center">
