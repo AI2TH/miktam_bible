@@ -23,7 +23,6 @@ import { router, useNavigation } from 'expo-router';
 import { isDatabaseInitialized } from '../../src/services/database';
 import { DailyTodoList } from '../../src/components/calendar/DailyTodoList';
 import { ChurchMeetingPlanner } from '../../src/components/calendar/ChurchMeetingPlanner';
-import { ReadingPlanSection } from '../../src/components/calendar/ReadingPlanSection';
 import {
   getTodosForDate,
   addTodo,
@@ -40,11 +39,7 @@ import {
   getActiveReadingPlan,
   getTodayReading,
   getReadingForDate,
-  startReadingPlan,
   completeDayReading,
-  cancelReadingPlan,
-  updatePlanReminder,
-  PlanType,
   ReadingPlan,
   ReadingPlanDay,
 } from '../../src/services/readingPlanService';
@@ -223,51 +218,12 @@ export default function CalendarScreen() {
     loadPlannerData(selectedDate);
   };
 
-  const handleStartPlan = async (
-    type: PlanType,
-    remTime: string,
-    remEnabled: boolean,
-    customConfig?: any
-  ) => {
-    const newPlan = await startReadingPlan(type, remTime, remEnabled, customConfig);
-    setReadingPlan(newPlan);
-    loadPlanData();
-    loadPlannerData(selectedDate);
-    Alert.alert('Reading Plan Started', `Your ${newPlan.title} has begun! Daily reading has been set on your calendar.`);
-  };
-
   const handleCompletePlanDay = async (dayNumber: number) => {
     if (!readingPlan) return;
     await completeDayReading(readingPlan.id, dayNumber);
     loadPlanData();
     loadPlannerData(selectedDate);
     Alert.alert('Congratulations! 🎉', "Today's Bible reading marked as complete! Keep it up.");
-  };
-
-  const handleCancelPlan = () => {
-    if (!readingPlan) return;
-    Alert.alert(
-      'Switch / Cancel Reading Plan',
-      'Are you sure you want to stop your current reading plan?',
-      [
-        { text: 'Keep Plan', style: 'cancel' },
-        {
-          text: 'Stop Plan',
-          style: 'destructive',
-          onPress: async () => {
-            await cancelReadingPlan(readingPlan.id);
-            setReadingPlan(null);
-            setTodayReading(null);
-          },
-        },
-      ]
-    );
-  };
-
-  const handleUpdatePlanReminder = async (enabled: boolean, timeStr: string) => {
-    if (!readingPlan) return;
-    await updatePlanReminder(readingPlan.id, enabled, timeStr);
-    loadPlanData();
   };
 
   const handleNavigateToReading = (bookNum: number, chapNum: number) => {
@@ -398,26 +354,43 @@ export default function CalendarScreen() {
     );
   };
 
+  const displayYearlyPromise: PromiseVerseInfo = yearlyPromise || {
+    id: 'default-yearly',
+    source: 'suggested',
+    versionId: currentVersionId || 'kjv',
+    bookNumber: 24,
+    chapter: 29,
+    verseNumber: 11,
+    calendarType: 'yearly',
+    targetDate: currentYear,
+    createdAt: '',
+    verseText: 'For I know the thoughts that I think toward you, saith the LORD, thoughts of peace, and not of evil, to give you an expected end.',
+    bookName: 'Jeremiah',
+  };
+
+  const displayMonthlyPromise: PromiseVerseInfo = monthlyPromise || {
+    id: 'default-monthly',
+    source: 'suggested',
+    versionId: currentVersionId || 'kjv',
+    bookNumber: 50,
+    chapter: 4,
+    verseNumber: 13,
+    calendarType: 'monthly',
+    targetDate: currentMonthStr,
+    createdAt: '',
+    verseText: 'I can do all things through Christ which strengtheneth me.',
+    bookName: 'Philippians',
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <Header title="Study Progress & Promises" />
+      <Header title="Promises, Calendar & Planner" />
       <ScrollView contentContainerStyle={[styles.content, { padding: spacing.base, gap: spacing.lg }]} showsVerticalScrollIndicator={false}>
         
         {/* Streak Flame Badge */}
         <StreakBadge streakCount={streak} />
 
-        {/* ─── BIBLE READING PLAN (1 Year / 6 Months / 3 Months / 2 Months) ─── */}
-        <ReadingPlanSection
-          plan={readingPlan}
-          todayReading={todayReading}
-          onStartPlan={handleStartPlan}
-          onCompleteDay={handleCompletePlanDay}
-          onCancelPlan={handleCancelPlan}
-          onUpdateReminder={handleUpdatePlanReminder}
-          onNavigateToReading={handleNavigateToReading}
-        />
-
-        {/* ─── PROMISE VERSES SECTION (Gold Premium Aesthetic) ─── */}
+        {/* ─── 1. PROMISE VERSES ON TOP (Gold Premium Aesthetic) ─── */}
         <View style={styles.sectionHeader}>
           <Ionicons name="sparkles" size={18} color={colors.primary} />
           <Text variant="h2" style={styles.sectionTitle}>
@@ -433,42 +406,39 @@ export default function CalendarScreen() {
                 PROMISE OF THE YEAR {currentYear}
               </Text>
             </View>
-            {yearlyPromise && (
-              <TouchableOpacity onPress={() => handleRemovePromise('yearly')}>
-                <Ionicons name="trash-outline" size={18} color={colors.textTertiary} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <TouchableOpacity
+                onPress={() => handleOpenSelector('yearly')}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+              >
+                <Ionicons name="swap-horizontal-outline" size={16} color={colors.primary} />
+                <Text variant="caption" color="primary" style={{ fontWeight: 'bold' }}>
+                  Change
+                </Text>
               </TouchableOpacity>
-            )}
+              {yearlyPromise && (
+                <TouchableOpacity onPress={() => handleRemovePromise('yearly')}>
+                  <Ionicons name="trash-outline" size={16} color={colors.textTertiary} />
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
 
-          {yearlyPromise ? (
-            <View style={{ gap: spacing.sm }}>
-              <Text variant="scripture" style={styles.promiseText}>
-                "{cleanVerseText(yearlyPromise.verseText || 'No text found')}"
+          <View style={{ gap: spacing.sm }}>
+            <Text variant="scripture" style={styles.promiseText}>
+              "{cleanVerseText(displayYearlyPromise.verseText || '')}"
+            </Text>
+            <View style={styles.promiseFooter}>
+              <Text variant="bodySmall" color="primary" style={{ fontWeight: 'bold' }}>
+                — {getBookName(displayYearlyPromise.bookNumber, currentVersionId)} {displayYearlyPromise.chapter}:{displayYearlyPromise.verseNumber} ({displayYearlyPromise.versionId.toUpperCase()})
               </Text>
-              <View style={styles.promiseFooter}>
-                <Text variant="bodySmall" color="primary" style={{ fontWeight: 'bold' }}>
-                  — {getBookName(yearlyPromise.bookNumber, currentVersionId)} {yearlyPromise.chapter}:{yearlyPromise.verseNumber} ({yearlyPromise.versionId.toUpperCase()})
+              <TouchableOpacity onPress={() => handleNavigateToPromise(displayYearlyPromise)}>
+                <Text variant="caption" color="secondary" style={styles.readLink}>
+                  Read Chapter →
                 </Text>
-                <TouchableOpacity onPress={() => handleNavigateToPromise(yearlyPromise)}>
-                  <Text variant="caption" color="secondary" style={styles.readLink}>
-                    Read Chapter →
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              </TouchableOpacity>
             </View>
-          ) : (
-            <View style={styles.emptyPromiseContainer}>
-              <Text variant="bodySmall" color="textSecondary" style={{ fontStyle: 'italic', marginBottom: spacing.sm }}>
-                Set a scripture to anchor your study and walk this year.
-              </Text>
-              <Button
-                label="Choose Promise of the Year"
-                variant="outline"
-                onPress={() => handleOpenSelector('yearly')}
-                icon={<Ionicons name="add-circle-outline" size={16} color={colors.textPrimary} />}
-              />
-            </View>
-          )}
+          </View>
         </Card>
 
         {/* Promise of the Month */}
@@ -479,49 +449,46 @@ export default function CalendarScreen() {
                 PROMISE OF THE MONTH ({format(new Date(), 'MMMM')})
               </Text>
             </View>
-            {monthlyPromise && (
-              <TouchableOpacity onPress={() => handleRemovePromise('monthly')}>
-                <Ionicons name="trash-outline" size={18} color={colors.textTertiary} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <TouchableOpacity
+                onPress={() => handleOpenSelector('monthly')}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+              >
+                <Ionicons name="swap-horizontal-outline" size={16} color={colors.primary} />
+                <Text variant="caption" color="primary" style={{ fontWeight: 'bold' }}>
+                  Change
+                </Text>
               </TouchableOpacity>
-            )}
+              {monthlyPromise && (
+                <TouchableOpacity onPress={() => handleRemovePromise('monthly')}>
+                  <Ionicons name="trash-outline" size={16} color={colors.textTertiary} />
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
 
-          {monthlyPromise ? (
-            <View style={{ gap: spacing.sm }}>
-              <Text variant="scripture" style={styles.promiseText}>
-                "{cleanVerseText(monthlyPromise.verseText || 'No text found')}"
+          <View style={{ gap: spacing.sm }}>
+            <Text variant="scripture" style={styles.promiseText}>
+              "{cleanVerseText(displayMonthlyPromise.verseText || '')}"
+            </Text>
+            <View style={styles.promiseFooter}>
+              <Text variant="bodySmall" color="primary" style={{ fontWeight: 'bold' }}>
+                — {getBookName(displayMonthlyPromise.bookNumber, currentVersionId)} {displayMonthlyPromise.chapter}:{displayMonthlyPromise.verseNumber} ({displayMonthlyPromise.versionId.toUpperCase()})
               </Text>
-              <View style={styles.promiseFooter}>
-                <Text variant="bodySmall" color="primary" style={{ fontWeight: 'bold' }}>
-                  — {getBookName(monthlyPromise.bookNumber, currentVersionId)} {monthlyPromise.chapter}:{monthlyPromise.verseNumber} ({monthlyPromise.versionId.toUpperCase()})
+              <TouchableOpacity onPress={() => handleNavigateToPromise(displayMonthlyPromise)}>
+                <Text variant="caption" color="secondary" style={styles.readLink}>
+                  Read Chapter →
                 </Text>
-                <TouchableOpacity onPress={() => handleNavigateToPromise(monthlyPromise)}>
-                  <Text variant="caption" color="secondary" style={styles.readLink}>
-                    Read Chapter →
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              </TouchableOpacity>
             </View>
-          ) : (
-            <View style={styles.emptyPromiseContainer}>
-              <Text variant="bodySmall" color="textSecondary" style={{ fontStyle: 'italic', marginBottom: spacing.sm }}>
-                Keep a dedicated scripture promise for this month.
-              </Text>
-              <Button
-                label="Choose Promise of the Month"
-                variant="outline"
-                onPress={() => handleOpenSelector('monthly')}
-                icon={<Ionicons name="add-circle-outline" size={16} color={colors.textPrimary} />}
-              />
-            </View>
-          )}
+          </View>
         </Card>
 
-        {/* Calendar Grid View */}
+        {/* ─── 2. CALENDAR ATTENDANCE GRID ─── */}
         <View style={styles.sectionHeader}>
           <Ionicons name="calendar-outline" size={18} color={colors.primary} />
           <Text variant="h2" style={styles.sectionTitle}>
-            Daily Attendance & Planner
+            Calendar & Attendance
           </Text>
         </View>
 
@@ -532,6 +499,65 @@ export default function CalendarScreen() {
           todoDates={todoDates}
           eventDates={eventDates}
         />
+
+        {/* ─── 3. SPIRITUAL PLANNER & SCHEDULE ─── */}
+        <View style={styles.sectionHeader}>
+          <Ionicons name="clipboard-outline" size={18} color={colors.primary} />
+          <Text variant="h2" style={styles.sectionTitle}>
+            Spiritual Planner & Schedule
+          </Text>
+        </View>
+
+        {/* Bible Reading Plan Quick Hub Card */}
+        {readingPlan ? (
+          <Card style={[styles.planBannerCard, { borderColor: colors.primary, borderWidth: 1 }]} elevation="sm">
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flex: 1, gap: 2 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="ribbon" size={18} color={colors.primary} />
+                  <Text variant="h3" color="primary" style={{ fontWeight: 'bold' }}>
+                    {readingPlan.title}
+                  </Text>
+                </View>
+                <Text variant="caption" color="textSecondary">
+                  Day {readingPlan.currentDay} of {readingPlan.durationDays} • {readingPlan.progressPercentage}% completed
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => router.push('/(tabs)/plans' as any)}
+                style={[styles.planLinkChip, { backgroundColor: colors.surfaceElevated, borderColor: colors.border, borderWidth: 1 }]}
+              >
+                <Text variant="caption" color="primary" style={{ fontWeight: 'bold' }}>
+                  Manage Plans →
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Card>
+        ) : (
+          <Card style={styles.planBannerCard} elevation="sm" bordered>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flex: 1, gap: 2 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="ribbon-outline" size={18} color={colors.primary} />
+                  <Text variant="h3" color="primary" style={{ fontWeight: 'bold' }}>
+                    Bible Reading Journey
+                  </Text>
+                </View>
+                <Text variant="caption" color="textSecondary">
+                  1-Year, 6-Month, CSB 90-Day, Navigators, or Custom Generator
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => router.push('/(tabs)/plans' as any)}
+                style={[styles.planLinkChip, { backgroundColor: colors.primary }]}
+              >
+                <Text variant="caption" color="inverse" style={{ fontWeight: 'bold' }}>
+                  Choose Plan →
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Card>
+        )}
 
         {/* Selected Day Details: Daily To-Dos & Church Meetings */}
         <View style={{ gap: spacing.md, marginTop: spacing.xs }}>
@@ -934,6 +960,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 10,
+  },
+  planBannerCard: {
+    padding: 14,
+  },
+  planLinkChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
   },
 });
 

@@ -116,7 +116,7 @@ export function ParallelView({
     return (
       <View style={styles.center}>
         <Text variant="bodySmall" color="textSecondary">
-          No other Bible versions downloaded for comparison. Go to Profile to download.
+          No other Bible versions downloaded for comparison. Use the Version Selector in the Reader to download.
         </Text>
       </View>
     );
