@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, FlatList, Platform } from 'react-native';
 import { useTheme } from '../../theme';
 import { Text } from '../ui/Text';
 import { Card } from '../ui/Card';
 import { getVerse } from '../../services/bibleService';
+import { cleanVerseText, getVersionAbbreviation, isComplexScript } from '../../utils/bibleUtils';
 import type { BibleVersion, Verse } from '../../types/bible';
 
 interface ParallelViewProps {
@@ -19,6 +20,58 @@ interface ParallelItem {
   verse: Verse | null;
   loading: boolean;
 }
+
+// Memoized Translation Card component for optimal rendering performance
+const TranslationCard = React.memo(({ item, fontSize, colors, spacing }: {
+  item: ParallelItem;
+  fontSize: number;
+  colors: any;
+  spacing: any;
+}) => {
+  return (
+    <Card style={styles.card}>
+      <View style={styles.header}>
+        <Text variant="h3" color="primary" style={{ fontWeight: 'bold' }}>
+          {item.version.name} ({getVersionAbbreviation(item.version.id)})
+        </Text>
+      </View>
+      {item.loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator color={colors.primary} size="small" />
+        </View>
+      ) : item.verse ? (() => {
+        const isComplex = isComplexScript(item.verse.text);
+        const pFontSize = fontSize - 1;
+        const pLineHeight = isComplex
+          ? Math.round(pFontSize * 1.85)
+          : Math.round(pFontSize * 1.6);
+        const pFontFamily = isComplex
+          ? Platform.select({ android: 'sans-serif', default: undefined })
+          : undefined;
+
+        return (
+          <Text
+            variant="scripture"
+            style={[
+              styles.verseText,
+              {
+                fontSize: pFontSize,
+                lineHeight: pLineHeight,
+                ...(pFontFamily ? { fontFamily: pFontFamily } : {}),
+              },
+            ]}
+          >
+            {cleanVerseText(item.verse.text)}
+          </Text>
+        );
+      })() : (
+        <Text variant="caption" color="textTertiary">
+          Verse not available in this version.
+        </Text>
+      )}
+    </Card>
+  );
+});
 
 export function ParallelView({
   bookNumber,
@@ -63,46 +116,32 @@ export function ParallelView({
     return (
       <View style={styles.center}>
         <Text variant="bodySmall" color="textSecondary">
-          No other Bible versions downloaded for comparison. Go to Profile to download.
+          No other Bible versions downloaded for comparison. Use the Version Selector in the Reader to download.
         </Text>
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { gap: spacing.md }]}>
-      {items.map((item) => (
-        <Card key={item.version.id} style={styles.card}>
-          <View style={styles.header}>
-            <Text variant="h3" color="primary" style={{ fontWeight: 'bold' }}>
-              {item.version.name} ({item.version.id.toUpperCase()})
-            </Text>
-          </View>
-          {item.loading ? (
-            <ActivityIndicator color={colors.primary} size="small" />
-          ) : item.verse ? (
-            <Text
-              variant="scripture"
-              style={[
-                styles.verseText,
-                { fontSize: fontSize - 1, lineHeight: (fontSize - 1) * 1.6 },
-              ]}
-            >
-              {item.verse.text}
-            </Text>
-          ) : (
-            <Text variant="caption" color="textTertiary">
-              Verse not available in this version.
-            </Text>
-          )}
-        </Card>
-      ))}
-    </View>
+    <FlatList
+      data={items}
+      keyExtractor={(item) => item.version.id}
+      contentContainerStyle={[styles.listContent, { gap: spacing.md }]}
+      showsVerticalScrollIndicator={false}
+      renderItem={({ item }) => (
+        <TranslationCard
+          item={item}
+          fontSize={fontSize}
+          colors={colors}
+          spacing={spacing}
+        />
+      )}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  listContent: {
     paddingVertical: 12,
   },
   card: {
@@ -114,6 +153,11 @@ const styles = StyleSheet.create({
   },
   verseText: {
     marginTop: 4,
+  },
+  loadingContainer: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   center: {
     alignItems: 'center',

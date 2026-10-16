@@ -22,10 +22,7 @@ export default function BookmarksScreen() {
 
   const handleSelectVerse = (bookNumber: number, chapter: number, verseNumber: number) => {
     navigateTo(bookNumber, chapter);
-    // Dismiss the modal first to return to the tab layout
-    router.back();
-    // Then navigate to the reading tab screen
-    router.push({
+    router.replace({
       pathname: '/(tabs)/read/[book]/[chapter]',
       params: { book: bookNumber.toString(), chapter: chapter.toString() },
     });
@@ -63,7 +60,7 @@ export default function BookmarksScreen() {
             <View style={styles.cardWrapper}>
               <View style={{ flex: 1 }}>
                 <VerseCard
-                  bookName={getBookName(item.bookNumber, currentVersionId)}
+                  bookName={getBookName(item.bookNumber, item.versionId)}
                   chapter={item.chapter}
                   verseNumber={item.verseNumber}
                   text={item.text}

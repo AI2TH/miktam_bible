@@ -11,16 +11,38 @@ import { getPromiseVerse, savePromiseVerse, deletePromiseVerse, SUGGESTED_PROMIS
 import { getVerse } from '../../src/services/bibleService';
 import { useReaderStore } from '../../src/stores/readerStore';
 import { BOOK_NAMES } from '../../src/utils/constants';
-import { cleanVerseText } from '../../src/utils/bibleUtils';
+import { cleanVerseText, getVersionAbbreviation } from '../../src/utils/bibleUtils';
 import { getBookName } from '../../src/utils/bookTranslations';
 import { BottomSheet } from '../../src/components/ui/BottomSheet';
 import { Card } from '../../src/components/ui/Card';
 import { Button } from '../../src/components/ui/Button';
 import { Text } from '../../src/components/ui/Text';
-import { startOfMonth, endOfMonth, format } from 'date-fns';
+import { startOfMonth, endOfMonth, format, parseISO } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useNavigation } from 'expo-router';
 import { isDatabaseInitialized } from '../../src/services/database';
+import { DailyTodoList } from '../../src/components/calendar/DailyTodoList';
+import { ChurchMeetingPlanner } from '../../src/components/calendar/ChurchMeetingPlanner';
+import {
+  getTodosForDate,
+  addTodo,
+  toggleTodo,
+  deleteTodo,
+  getEventsForDate,
+  addEvent,
+  deleteEvent,
+  getCalendarBadgeDates,
+  CalendarTodo,
+  CalendarEvent,
+} from '../../src/services/calendarPlannerService';
+import {
+  getActiveReadingPlan,
+  getTodayReading,
+  getReadingForDate,
+  completeDayReading,
+  ReadingPlan,
+  ReadingPlanDay,
+} from '../../src/services/readingPlanService';
 
 const CHAPTERS_PER_BOOK: Record<number, number> = {
   1: 50, 2: 40, 3: 27, 4: 36, 5: 34, 6: 24, 7: 21, 8: 4, 9: 31, 10: 24,
@@ -34,6 +56,7 @@ const CHAPTERS_PER_BOOK: Record<number, number> = {
 
 export default function CalendarScreen() {
   const { colors, spacing, borderRadius } = useTheme();
+  const navigation = useNavigation();
   const { currentVersionId, navigateTo } = useReaderStore();
 
   const [streak, setStreak] = useState(0);
@@ -56,8 +79,57 @@ export default function CalendarScreen() {
   const [customVerse, setCustomVerse] = useState<string>('16');
   const [savingCustom, setSavingCustom] = useState(false);
 
+  // Planner & Reading Plan State
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  const [todos, setTodos] = useState<CalendarTodo[]>([]);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [todoDates, setTodoDates] = useState<string[]>([]);
+  const [eventDates, setEventDates] = useState<string[]>([]);
+  const [readingPlan, setReadingPlan] = useState<ReadingPlan | null>(null);
+  const [todayReading, setTodayReading] = useState<ReadingPlanDay | null>(null);
+  const [dateReading, setDateReading] = useState<ReadingPlanDay | null>(null);
+
   const currentYear = format(new Date(), 'yyyy');
   const currentMonthStr = format(new Date(), 'yyyy-MM');
+
+  const loadPlannerData = async (targetDate: string) => {
+    try {
+      if (!isDatabaseInitialized()) return;
+      const dayTodos = await getTodosForDate(targetDate);
+      setTodos(dayTodos);
+      const dayEvents = await getEventsForDate(targetDate);
+      setEvents(dayEvents);
+
+      const dReading = await getReadingForDate(targetDate);
+      setDateReading(dReading);
+
+      const today = new Date();
+      const start = format(startOfMonth(today), 'yyyy-MM-dd');
+      const end = format(endOfMonth(today), 'yyyy-MM-dd');
+      const badgeDates = await getCalendarBadgeDates(start, end);
+      setTodoDates(badgeDates.todoDates);
+      setEventDates(badgeDates.eventDates);
+    } catch (e) {
+      console.error('[Calendar] Failed to load planner data:', e);
+    }
+  };
+
+  const loadPlanData = async () => {
+    try {
+      if (!isDatabaseInitialized()) return;
+      const plan = await getActiveReadingPlan();
+      setReadingPlan(plan);
+      if (plan) {
+        const reading = await getTodayReading(plan.id);
+        setTodayReading(reading);
+      } else {
+        setTodayReading(null);
+      }
+    } catch (e) {
+      console.error('[Calendar] Failed to load reading plan data:', e);
+    }
+  };
 
   const loadProgressAndPromises = async (active: boolean = true) => {
     try {
@@ -92,6 +164,12 @@ export default function CalendarScreen() {
 
       const mthPromise = await getPromiseVerse('monthly', currentMonthStr, currentVersionId);
       if (active) setMonthlyPromise(mthPromise);
+
+      // Load Planner & Plan data
+      if (active) {
+        await loadPlannerData(selectedDate);
+        await loadPlanData();
+      }
     } catch (e) {
       console.error('[Calendar] Failed to load progress or promise data:', e);
     } finally {
@@ -102,10 +180,59 @@ export default function CalendarScreen() {
   useEffect(() => {
     let active = true;
     loadProgressAndPromises(active);
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadProgressAndPromises(true);
+    });
     return () => {
       active = false;
+      unsubscribe();
     };
-  }, [currentVersionId]);
+  }, [currentVersionId, navigation]);
+
+  useEffect(() => {
+    loadPlannerData(selectedDate);
+  }, [selectedDate]);
+
+  const handleAddTodo = async (title: string) => {
+    await addTodo(selectedDate, title);
+    loadPlannerData(selectedDate);
+  };
+
+  const handleToggleTodo = async (id: string, completed: boolean) => {
+    await toggleTodo(id, completed);
+    loadPlannerData(selectedDate);
+  };
+
+  const handleDeleteTodo = async (id: string) => {
+    await deleteTodo(id);
+    loadPlannerData(selectedDate);
+  };
+
+  const handleAddEvent = async (event: Omit<CalendarEvent, 'id' | 'createdAt'>) => {
+    await addEvent(event);
+    loadPlannerData(selectedDate);
+  };
+
+  const handleDeleteEvent = async (id: string) => {
+    await deleteEvent(id);
+    loadPlannerData(selectedDate);
+  };
+
+  const handleCompletePlanDay = async (dayNumber: number) => {
+    if (!readingPlan) return;
+    await completeDayReading(readingPlan.id, dayNumber);
+    loadPlanData();
+    loadPlannerData(selectedDate);
+    Alert.alert('Congratulations! 🎉', "Today's Bible reading marked as complete! Keep it up.");
+  };
+
+  const handleNavigateToReading = (bookNum: number, chapNum: number) => {
+    navigateTo(bookNum, chapNum);
+    router.push({
+      pathname: '/(tabs)/read/[book]/[chapter]',
+      params: { book: bookNum.toString(), chapter: chapNum.toString() },
+    });
+  };
 
   const handleOpenSelector = (type: 'monthly' | 'yearly') => {
     setSelectorType(type);
@@ -227,15 +354,39 @@ export default function CalendarScreen() {
     );
   };
 
-  return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <Header title="Study Progress & Promises" />
-      <ScrollView contentContainerStyle={[styles.content, { padding: spacing.base, gap: spacing.lg }]} showsVerticalScrollIndicator={false}>
-        
-        {/* Streak Flame Badge */}
-        <StreakBadge streakCount={streak} />
+  const displayYearlyPromise: PromiseVerseInfo = yearlyPromise || {
+    id: 'default-yearly',
+    source: 'suggested',
+    versionId: currentVersionId || 'kjv',
+    bookNumber: 24,
+    chapter: 29,
+    verseNumber: 11,
+    calendarType: 'yearly',
+    targetDate: currentYear,
+    createdAt: '',
+    verseText: 'For I know the thoughts that I think toward you, saith the LORD, thoughts of peace, and not of evil, to give you an expected end.',
+    bookName: 'Jeremiah',
+  };
 
-        {/* ─── PROMISE VERSES SECTION (Gold Premium Aesthetic) ─── */}
+  const displayMonthlyPromise: PromiseVerseInfo = monthlyPromise || {
+    id: 'default-monthly',
+    source: 'suggested',
+    versionId: currentVersionId || 'kjv',
+    bookNumber: 50,
+    chapter: 4,
+    verseNumber: 13,
+    calendarType: 'monthly',
+    targetDate: currentMonthStr,
+    createdAt: '',
+    verseText: 'I can do all things through Christ which strengtheneth me.',
+    bookName: 'Philippians',
+  };
+
+  return (
+    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.container, { backgroundColor: colors.background }]}>
+      <Header title="Calendar & Planner" />
+      <ScrollView contentContainerStyle={[styles.content, { padding: spacing.base, gap: spacing.lg, paddingBottom: spacing['2xl'] }]} showsVerticalScrollIndicator={false}>
+        {/* ─── 1. PROMISE VERSES ON TOP (Gold Premium Aesthetic) ─── */}
         <View style={styles.sectionHeader}>
           <Ionicons name="sparkles" size={18} color={colors.primary} />
           <Text variant="h2" style={styles.sectionTitle}>
@@ -251,42 +402,39 @@ export default function CalendarScreen() {
                 PROMISE OF THE YEAR {currentYear}
               </Text>
             </View>
-            {yearlyPromise && (
-              <TouchableOpacity onPress={() => handleRemovePromise('yearly')}>
-                <Ionicons name="trash-outline" size={18} color={colors.textTertiary} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <TouchableOpacity
+                onPress={() => handleOpenSelector('yearly')}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+              >
+                <Ionicons name="swap-horizontal-outline" size={16} color={colors.primary} />
+                <Text variant="caption" color="primary" style={{ fontWeight: 'bold' }}>
+                  Change
+                </Text>
               </TouchableOpacity>
-            )}
+              {yearlyPromise && (
+                <TouchableOpacity onPress={() => handleRemovePromise('yearly')}>
+                  <Ionicons name="trash-outline" size={16} color={colors.textTertiary} />
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
 
-          {yearlyPromise ? (
-            <View style={{ gap: spacing.sm }}>
-              <Text variant="scripture" style={styles.promiseText}>
-                "{cleanVerseText(yearlyPromise.verseText || 'No text found')}"
+          <View style={{ gap: spacing.sm }}>
+            <Text variant="scripture" style={styles.promiseText}>
+              "{cleanVerseText(displayYearlyPromise.verseText || '')}"
+            </Text>
+            <View style={styles.promiseFooter}>
+              <Text variant="bodySmall" color="primary" style={{ fontWeight: 'bold' }}>
+                — {getBookName(displayYearlyPromise.bookNumber, currentVersionId)} {displayYearlyPromise.chapter}:{displayYearlyPromise.verseNumber} ({displayYearlyPromise.versionId.toUpperCase()})
               </Text>
-              <View style={styles.promiseFooter}>
-                <Text variant="bodySmall" color="primary" style={{ fontWeight: 'bold' }}>
-                  — {getBookName(yearlyPromise.bookNumber, currentVersionId)} {yearlyPromise.chapter}:{yearlyPromise.verseNumber} ({yearlyPromise.versionId.toUpperCase()})
+              <TouchableOpacity onPress={() => handleNavigateToPromise(displayYearlyPromise)}>
+                <Text variant="caption" color="secondary" style={styles.readLink}>
+                  Read Chapter →
                 </Text>
-                <TouchableOpacity onPress={() => handleNavigateToPromise(yearlyPromise)}>
-                  <Text variant="caption" color="secondary" style={styles.readLink}>
-                    Read Chapter →
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              </TouchableOpacity>
             </View>
-          ) : (
-            <View style={styles.emptyPromiseContainer}>
-              <Text variant="bodySmall" color="textSecondary" style={{ fontStyle: 'italic', marginBottom: spacing.sm }}>
-                Set a scripture to anchor your study and walk this year.
-              </Text>
-              <Button
-                label="Choose Promise of the Year"
-                variant="outline"
-                onPress={() => handleOpenSelector('yearly')}
-                icon={<Ionicons name="add-circle-outline" size={16} color={colors.textPrimary} />}
-              />
-            </View>
-          )}
+          </View>
         </Card>
 
         {/* Promise of the Month */}
@@ -297,52 +445,217 @@ export default function CalendarScreen() {
                 PROMISE OF THE MONTH ({format(new Date(), 'MMMM')})
               </Text>
             </View>
-            {monthlyPromise && (
-              <TouchableOpacity onPress={() => handleRemovePromise('monthly')}>
-                <Ionicons name="trash-outline" size={18} color={colors.textTertiary} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <TouchableOpacity
+                onPress={() => handleOpenSelector('monthly')}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+              >
+                <Ionicons name="swap-horizontal-outline" size={16} color={colors.primary} />
+                <Text variant="caption" color="primary" style={{ fontWeight: 'bold' }}>
+                  Change
+                </Text>
+              </TouchableOpacity>
+              {monthlyPromise && (
+                <TouchableOpacity onPress={() => handleRemovePromise('monthly')}>
+                  <Ionicons name="trash-outline" size={16} color={colors.textTertiary} />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          <View style={{ gap: spacing.sm }}>
+            <Text variant="scripture" style={styles.promiseText}>
+              "{cleanVerseText(displayMonthlyPromise.verseText || '')}"
+            </Text>
+            <View style={styles.promiseFooter}>
+              <Text variant="bodySmall" color="primary" style={{ fontWeight: 'bold' }}>
+                — {getBookName(displayMonthlyPromise.bookNumber, currentVersionId)} {displayMonthlyPromise.chapter}:{displayMonthlyPromise.verseNumber} ({displayMonthlyPromise.versionId.toUpperCase()})
+              </Text>
+              <TouchableOpacity onPress={() => handleNavigateToPromise(displayMonthlyPromise)}>
+                <Text variant="caption" color="secondary" style={styles.readLink}>
+                  Read Chapter →
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Card>
+
+        {/* ─── 2. CALENDAR ATTENDANCE GRID ─── */}
+        <View style={styles.sectionHeader}>
+          <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+          <Text variant="h2" style={styles.sectionTitle}>
+            Calendar & Attendance
+          </Text>
+        </View>
+
+        <CalendarGrid
+          readDates={readDates}
+          selectedDate={selectedDate}
+          onSelectDate={setSelectedDate}
+          todoDates={todoDates}
+          eventDates={eventDates}
+        />
+
+        {/* ─── 3. SPIRITUAL PLANNER & SCHEDULE ─── */}
+        <View style={styles.sectionHeader}>
+          <Ionicons name="clipboard-outline" size={18} color={colors.primary} />
+          <Text variant="h2" style={styles.sectionTitle}>
+            Spiritual Planner & Schedule
+          </Text>
+        </View>
+
+        {/* Bible Reading Plan Quick Hub Card */}
+        {readingPlan ? (
+          <Card style={[styles.planBannerCard, { borderColor: colors.primary, borderWidth: 1 }]} elevation="sm">
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flex: 1, gap: 2 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="ribbon" size={18} color={colors.primary} />
+                  <Text variant="h3" color="primary" style={{ fontWeight: 'bold' }}>
+                    {readingPlan.title}
+                  </Text>
+                </View>
+                <Text variant="caption" color="textSecondary">
+                  Day {readingPlan.currentDay} of {readingPlan.durationDays} • {readingPlan.progressPercentage}% completed
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => router.push('/(tabs)/plans' as any)}
+                style={[styles.planLinkChip, { backgroundColor: colors.surfaceElevated, borderColor: colors.border, borderWidth: 1 }]}
+              >
+                <Text variant="caption" color="primary" style={{ fontWeight: 'bold' }}>
+                  Manage Plans →
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Card>
+        ) : (
+          <Card style={styles.planBannerCard} elevation="sm" bordered>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flex: 1, gap: 2 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="ribbon-outline" size={18} color={colors.primary} />
+                  <Text variant="h3" color="primary" style={{ fontWeight: 'bold' }}>
+                    Bible Reading Journey
+                  </Text>
+                </View>
+                <Text variant="caption" color="textSecondary">
+                  1-Year, 6-Month, CSB 90-Day, Navigators, or Custom Generator
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => router.push('/(tabs)/plans' as any)}
+                style={[styles.planLinkChip, { backgroundColor: colors.primary }]}
+              >
+                <Text variant="caption" color="inverse" style={{ fontWeight: 'bold' }}>
+                  Choose Plan →
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Card>
+        )}
+
+        {/* Selected Day Details: Daily To-Dos & Church Meetings */}
+        <View style={{ gap: spacing.md, marginTop: spacing.xs }}>
+          <View style={styles.selectedDateHeader}>
+            <View style={{ flex: 1 }}>
+              <Text variant="h2" style={{ fontWeight: '700' }}>
+                {format(parseISO(selectedDate), 'EEEE, MMMM d, yyyy')}
+              </Text>
+              <Text variant="caption" color="textSecondary">
+                {selectedDate === todayStr ? 'Today • Daily Schedule & Plans' : 'Selected Day Schedule & Plans'}
+              </Text>
+            </View>
+            {selectedDate !== todayStr && (
+              <TouchableOpacity
+                onPress={() => setSelectedDate(todayStr)}
+                style={[
+                  styles.todayChip,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}
+              >
+                <Text variant="caption" color="primary" style={{ fontWeight: 'bold' }}>
+                  Back to Today
+                </Text>
               </TouchableOpacity>
             )}
           </View>
 
-          {monthlyPromise ? (
-            <View style={{ gap: spacing.sm }}>
-              <Text variant="scripture" style={styles.promiseText}>
-                "{cleanVerseText(monthlyPromise.verseText || 'No text found')}"
-              </Text>
-              <View style={styles.promiseFooter}>
-                <Text variant="bodySmall" color="primary" style={{ fontWeight: 'bold' }}>
-                  — {getBookName(monthlyPromise.bookNumber, currentVersionId)} {monthlyPromise.chapter}:{monthlyPromise.verseNumber} ({monthlyPromise.versionId.toUpperCase()})
-                </Text>
-                <TouchableOpacity onPress={() => handleNavigateToPromise(monthlyPromise)}>
-                  <Text variant="caption" color="secondary" style={styles.readLink}>
-                    Read Chapter →
+          {/* Scheduled Bible Reading for Selected Date */}
+          {dateReading && (
+            <Card style={styles.dateReadingCard} bordered>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="book" size={17} color={colors.primary} />
+                  <Text variant="caption" color="primary" style={{ fontWeight: 'bold', letterSpacing: 0.5 }}>
+                    SCHEDULED BIBLE READING:
                   </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : (
-            <View style={styles.emptyPromiseContainer}>
-              <Text variant="bodySmall" color="textSecondary" style={{ fontStyle: 'italic', marginBottom: spacing.sm }}>
-                Keep a dedicated scripture promise for this month.
-              </Text>
-              <Button
-                label="Choose Promise of the Month"
-                variant="outline"
-                onPress={() => handleOpenSelector('monthly')}
-                icon={<Ionicons name="add-circle-outline" size={16} color={colors.textPrimary} />}
-              />
-            </View>
-          )}
-        </Card>
+                </View>
 
-        {/* Calendar Grid View */}
-        <View style={styles.sectionHeader}>
-          <Ionicons name="calendar-outline" size={18} color={colors.primary} />
-          <Text variant="h2" style={styles.sectionTitle}>
-            Daily Attendance
-          </Text>
+                {/* Status Badge: Pending vs Completed */}
+                <View
+                  style={[
+                    styles.statusBadge,
+                    dateReading.isCompleted
+                      ? { backgroundColor: '#4E9F3D20', borderColor: '#4E9F3D' }
+                      : { backgroundColor: '#E5A93C20', borderColor: '#E5A93C' },
+                  ]}
+                >
+                  <Text
+                    variant="caption"
+                    style={{
+                      color: dateReading.isCompleted ? '#4E9F3D' : '#E5A93C',
+                      fontWeight: 'bold',
+                      fontSize: 11,
+                    }}
+                  >
+                    {dateReading.isCompleted ? '✓ Completed' : '⏳ Pending'}
+                  </Text>
+                </View>
+              </View>
+
+              <Text variant="h2" style={{ fontWeight: '700', marginVertical: 4 }}>
+                {dateReading.readingLabel || `${dateReading.bookName} ${dateReading.startChapter === dateReading.endChapter ? dateReading.startChapter : `${dateReading.startChapter} - ${dateReading.endChapter}`}`}
+              </Text>
+
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+                <Button
+                  label="Read Now 📖"
+                  onPress={() => handleNavigateToReading(dateReading.bookNumber, dateReading.startChapter)}
+                  variant="primary"
+                  style={{ flex: 1 }}
+                />
+                {!dateReading.isCompleted && (
+                  <Button
+                    label="Mark Done ✓"
+                    onPress={() => handleCompletePlanDay(dateReading.dayNumber)}
+                    variant="outline"
+                    style={{ flex: 1 }}
+                  />
+                )}
+              </View>
+            </Card>
+          )}
+
+          {/* Daily To-Do List */}
+          <DailyTodoList
+            date={selectedDate}
+            formattedDate={format(parseISO(selectedDate), 'MMMM d')}
+            todos={todos}
+            onAddTodo={handleAddTodo}
+            onToggleTodo={handleToggleTodo}
+            onDeleteTodo={handleDeleteTodo}
+          />
+
+          {/* Church Meeting Planner */}
+          <ChurchMeetingPlanner
+            date={selectedDate}
+            formattedDate={format(parseISO(selectedDate), 'MMMM d')}
+            events={events}
+            onAddEvent={handleAddEvent}
+            onDeleteEvent={handleDeleteEvent}
+          />
         </View>
-        <CalendarGrid readDates={readDates} />
 
         {/* Statistics Panels */}
         <View style={styles.sectionHeader}>
@@ -361,7 +674,7 @@ export default function CalendarScreen() {
         title={`Set Promise of the ${selectorType === 'yearly' ? 'Year' : 'Month'}`}
         maxHeight="85%"
       >
-        <ScrollView contentContainerStyle={{ gap: spacing.md, paddingVertical: spacing.sm }} showsVerticalScrollIndicator={false}>
+        <View style={{ gap: spacing.md, paddingVertical: spacing.sm }}>
           
           {/* Tabs for Suggested vs Custom */}
           <View style={[styles.tabBar, { backgroundColor: colors.surface, borderRadius: borderRadius.md }]}>
@@ -412,7 +725,7 @@ export default function CalendarScreen() {
                 >
                   <Card style={styles.suggestedCard} bordered>
                     <Text variant="scripture" style={[styles.suggestedText, { marginBottom: spacing.xs }]}>
-                      "{item.text}"
+                      "{cleanVerseText(item.text)}"
                     </Text>
                     <Text variant="bodySmall" color="primary" style={{ fontWeight: 'bold', textAlign: 'right' }}>
                       — {getBookName(item.bookNumber, currentVersionId)} {item.chapter}:{item.verseNumber}
@@ -427,7 +740,7 @@ export default function CalendarScreen() {
           {selectorMode === 'custom' && (
             <View style={{ gap: spacing.md }}>
               <Text variant="bodySmall" color="textSecondary">
-                Enter coordinates for any verse in the Bible. It will be fetched offline from your current translation ({currentVersionId.toUpperCase()}).
+                Enter coordinates for any verse in the Bible. It will be fetched offline from your current translation ({getVersionAbbreviation(currentVersionId)}).
               </Text>
 
               {/* Book Picker list */}
@@ -528,7 +841,7 @@ export default function CalendarScreen() {
             </View>
           )}
 
-        </ScrollView>
+        </View>
       </BottomSheet>
     </SafeAreaView>
   );
@@ -622,6 +935,35 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     fontSize: 16,
     textAlign: 'center',
+  },
+  selectedDateHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  todayChip: {
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+  },
+  dateReadingCard: {
+    padding: 16,
+  },
+  statusBadge: {
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  planBannerCard: {
+    padding: 14,
+  },
+  planLinkChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
   },
 });
 

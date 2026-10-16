@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-const CHAPTERS_PER_BOOK: Record<number, number> = {
+export const CHAPTERS_PER_BOOK: Record<number, number> = {
   1: 50, 2: 40, 3: 27, 4: 36, 5: 34, 6: 24, 7: 21, 8: 4, 9: 31, 10: 24,
   11: 22, 12: 25, 13: 29, 14: 36, 15: 10, 16: 13, 17: 10, 18: 42, 19: 150, 20: 31,
   21: 12, 22: 8, 23: 66, 24: 52, 25: 5, 26: 48, 27: 12, 28: 14, 29: 3, 30: 9,
@@ -24,6 +24,13 @@ interface ReaderState {
   showParallelView: boolean;
   parallelVersionId: string | null;
 
+  // Dual language / Bilingual reading mode
+  dualLanguageEnabled: boolean;
+  secondaryVersionId: string | null;
+
+  // Streak state
+  streak: number;
+
   // Actions
   setVersion: (versionId: string) => void;
   navigateTo: (bookNumber: number, chapter: number) => void;
@@ -34,6 +41,12 @@ interface ReaderState {
   toggleInterlinear: () => void;
   toggleCrossRefs: () => void;
   toggleParallelView: (versionId?: string) => void;
+  setDualLanguageEnabled: (enabled: boolean) => void;
+  setSecondaryVersion: (versionId: string | null) => void;
+  toggleDualLanguage: (versionId?: string) => void;
+  swapLanguages: () => void;
+  setStreak: (streak: number) => void;
+  refreshStreak: () => Promise<number>;
 }
 
 export const useReaderStore = create<ReaderState>((set, get) => ({
@@ -48,7 +61,25 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   showParallelView: false,
   parallelVersionId: null,
 
-  setVersion: (versionId) => set({ currentVersionId: versionId }),
+  dualLanguageEnabled: false,
+  secondaryVersionId: 'kjv',
+
+  streak: 0,
+  setStreak: (count: number) => set({ streak: count }),
+  refreshStreak: async () => {
+    try {
+      const { isDatabaseInitialized } = await import('../services/database');
+      if (!isDatabaseInitialized()) return get().streak;
+      const { getStreakCount } = await import('../services/readingProgressService');
+      const count = await getStreakCount();
+      set({ streak: count });
+      return count;
+    } catch {
+      return get().streak;
+    }
+  },
+
+  setVersion: (versionId) => set({ currentVersionId: (versionId || 'kjv').toLowerCase().trim() }),
 
   navigateTo: (bookNumber, chapter) => set({
     currentBookNumber: bookNumber,
@@ -97,4 +128,23 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     showParallelView: !s.showParallelView,
     parallelVersionId: versionId || s.parallelVersionId,
   })),
+  setDualLanguageEnabled: (enabled) => set({ dualLanguageEnabled: enabled }),
+  setSecondaryVersion: (versionId) => set({ secondaryVersionId: versionId ? versionId.toLowerCase().trim() : null }),
+  toggleDualLanguage: (versionId) => set((s) => {
+    const nextEnabled = !s.dualLanguageEnabled;
+    const defaultSecondary = (s.currentVersionId === 'kjv' ? 'kan' : 'kjv');
+    return {
+      dualLanguageEnabled: nextEnabled,
+      secondaryVersionId: versionId ? versionId.toLowerCase().trim() : (s.secondaryVersionId || defaultSecondary),
+    };
+  }),
+  swapLanguages: () => set((s) => {
+    if (!s.secondaryVersionId) return s;
+    const oldPrimary = s.currentVersionId;
+    const oldSecondary = s.secondaryVersionId;
+    return {
+      currentVersionId: oldSecondary,
+      secondaryVersionId: oldPrimary,
+    };
+  }),
 }));

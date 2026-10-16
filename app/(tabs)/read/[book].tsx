@@ -24,7 +24,8 @@ export default function BookChaptersScreen() {
   const { book } = useLocalSearchParams<{ book: string }>();
   const { currentVersionId } = useReaderStore();
 
-  const bookNumber = parseInt(book || '1');
+  const parsedBook = parseInt(Array.isArray(book) ? book[0] : (book || '1'));
+  const bookNumber = isNaN(parsedBook) ? 1 : Math.max(1, Math.min(66, parsedBook));
   const bookName = getBookName(bookNumber, currentVersionId);
   const totalChapters = CHAPTERS_PER_BOOK[bookNumber] || 1;
 
@@ -35,9 +36,13 @@ export default function BookChaptersScreen() {
     });
   };
 
+  const handleBack = () => {
+    router.replace('/(tabs)/read');
+  };
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <Header title={bookName} showBack={true} />
+    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.container, { backgroundColor: colors.background }]}>
+      <Header title={bookName} showBack={true} onBack={handleBack} />
       <View style={[styles.content, { padding: spacing.base }]}>
         <ChapterGrid totalChapters={totalChapters} onSelectChapter={handleSelectChapter} />
       </View>

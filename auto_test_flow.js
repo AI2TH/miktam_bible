@@ -36,14 +36,14 @@ async function getUiDump() {
     if (fs.existsSync(localFile)) {
       try { fs.unlinkSync(localFile); } catch (e) {}
     }
-    runAdb('shell rm -f /sdcard/window_dump.xml');
-    const res = runAdb('shell uiautomator dump /sdcard/window_dump.xml');
+    runAdb('shell rm -f /data/local/tmp/window_dump.xml');
+    const res = runAdb('shell uiautomator dump /data/local/tmp/window_dump.xml');
     if (res === null) {
       console.log(`[getUiDump] uiautomator dump failed on attempt ${attempt + 1}. Retrying in 2s...`);
       await sleep(2000);
       continue;
     }
-    runAdb(`pull /sdcard/window_dump.xml ${localFile}`);
+    runAdb(`pull /data/local/tmp/window_dump.xml ${localFile}`);
     if (fs.existsSync(localFile)) {
       return fs.readFileSync(localFile, 'utf8');
     }
@@ -83,13 +83,16 @@ function findVersionChips(xml) {
   return chips;
 }
 
-async function ensureOnBookGrid() {
+async function ensureOnBookGrid(attempt = 0) {
+  if (attempt > 10) {
+    throw new Error('Failed to ensure app is on Book Grid after 10 attempts. Exiting to avoid infinite recursion.');
+  }
   const xml = await getUiDump();
   if (!xml.includes('package="miktam.bible"')) {
     console.log('[Recovery] App is closed or not in foreground. Relaunching app...');
     runAdb('shell monkey -p miktam.bible -c android.intent.category.LAUNCHER 1');
     await sleep(4000);
-    return ensureOnBookGrid();
+    return ensureOnBookGrid(attempt + 1);
   }
 
   // If we are on the Home screen, tap the Read tab to go to Book Grid
@@ -97,7 +100,7 @@ async function ensureOnBookGrid() {
     console.log('[Recovery] On Home screen. Tapping Read tab...');
     runAdb('shell input tap 324 2311');
     await sleep(1500);
-    return ensureOnBookGrid();
+    return ensureOnBookGrid(attempt + 1);
   }
 
   if (xml.includes('Old Testament') || xml.includes('New Testament') || xml.includes('Gênesis') || xml.includes('Genesis') || xml.includes('Geneza')) {
@@ -107,7 +110,7 @@ async function ensureOnBookGrid() {
       console.log('[Recovery] In Scripture/Chapter Picker. Pressing Back...');
       runAdb('shell input keyevent 4');
       await sleep(1200);
-      return ensureOnBookGrid();
+      return ensureOnBookGrid(attempt + 1);
     }
     return true;
   }
@@ -116,7 +119,7 @@ async function ensureOnBookGrid() {
   console.log('[Recovery] Not on Read tab. Tapping Read tab...');
   runAdb('shell input tap 324 2311');
   await sleep(1500);
-  return ensureOnBookGrid();
+  return ensureOnBookGrid(attempt + 1);
 }
 
 async function main() {

@@ -1,5 +1,6 @@
 import { getDatabase } from './database';
 import type { Verse, Book, BibleVersion } from '../types/bible';
+import { cleanVerseText } from '../utils/bibleUtils';
 
 // ─── BIBLE VERSIONS ──────────────────────────────
 
@@ -33,14 +34,54 @@ export async function getDownloadedVersions(): Promise<BibleVersion[]> {
   }));
 }
 
+export interface BibleLanguageRecord {
+  code: string;
+  name: string;
+  localName: string;
+  versionCount: number;
+}
+
+/** Get all registered languages ordered by name */
+export async function getAllLanguages(): Promise<BibleLanguageRecord[]> {
+  const db = getDatabase();
+  const rows = await db.getAllAsync<any>(
+    'SELECT * FROM bible_languages ORDER BY name'
+  );
+  return rows.map(r => ({
+    code: r.code,
+    name: r.name,
+    localName: r.local_name,
+    versionCount: r.version_count,
+  }));
+}
+
+/** Get versions for a specific language or filter query */
+export async function getVersionsByLanguage(langCode: string): Promise<BibleVersion[]> {
+  const db = getDatabase();
+  const query = langCode === 'all'
+    ? 'SELECT * FROM bible_versions ORDER BY is_downloaded DESC, name ASC'
+    : 'SELECT * FROM bible_versions WHERE language = ? ORDER BY is_downloaded DESC, name ASC';
+  const params = langCode === 'all' ? [] : [langCode];
+  const rows = await db.getAllAsync<any>(query, params);
+  return rows.map(r => ({
+    id: r.id,
+    name: r.name,
+    language: r.language,
+    isDownloaded: r.is_downloaded === 1,
+    downloadDate: r.download_date,
+    totalSizeMb: r.total_size_mb,
+  }));
+}
+
 // ─── BOOKS ───────────────────────────────────────
 
 /** Get all 66 books for a version, ordered by book_number */
 export async function getBooks(versionId: string): Promise<Book[]> {
+  const normVersion = (versionId || 'kjv').toLowerCase().trim();
   const db = getDatabase();
   const rows = await db.getAllAsync<any>(
-    'SELECT * FROM books WHERE version_id = ? ORDER BY book_number',
-    [versionId]
+    'SELECT * FROM books WHERE LOWER(version_id) = ? ORDER BY book_number',
+    [normVersion]
   );
   return rows.map(r => ({
     id: r.id,
@@ -55,10 +96,11 @@ export async function getBooks(versionId: string): Promise<Book[]> {
 
 /** Get a single book by number */
 export async function getBook(versionId: string, bookNumber: number): Promise<Book | null> {
+  const normVersion = (versionId || 'kjv').toLowerCase().trim();
   const db = getDatabase();
   const row = await db.getFirstAsync<any>(
-    'SELECT * FROM books WHERE version_id = ? AND book_number = ?',
-    [versionId, bookNumber]
+    'SELECT * FROM books WHERE LOWER(version_id) = ? AND book_number = ?',
+    [normVersion, bookNumber]
   );
   if (!row) return null;
   return {
@@ -79,15 +121,35 @@ export async function getChapterVerses(
   bookNumber: number,
   chapter: number
 ): Promise<Verse[]> {
+  const normVersion = (versionId || 'kjv').toLowerCase().trim();
   console.log(`[bibleService] getChapterVerses called for versionId="${versionId}", bookNumber=${bookNumber}, chapter=${chapter}`);
   const db = getDatabase();
   try {
-    const rows = await db.getAllAsync<any>(
+    let rows = await db.getAllAsync<any>(
       `SELECT * FROM verses
-       WHERE version_id = ? AND book_number = ? AND chapter = ?
+       WHERE LOWER(version_id) = ? AND book_number = ? AND chapter = ?
        ORDER BY verse_number`,
-      [versionId, bookNumber, chapter]
+      [normVersion, bookNumber, chapter]
     );
+
+    // Only fallback if this version has ZERO verses in the database (e.g. unseeded study module)
+    // Never fallback if the version exists locally but simply doesn't contain this book (e.g. partial NT or Psalms)
+    if (rows.length === 0 && normVersion !== 'kjv') {
+      const anyVerses = await db.getFirstAsync<any>(
+        'SELECT id FROM verses WHERE LOWER(version_id) = ? LIMIT 1',
+        [normVersion]
+      );
+      if (!anyVerses) {
+        console.log(`[bibleService] No verses at all in DB for ${versionId}, falling back to kjv`);
+        rows = await db.getAllAsync<any>(
+          `SELECT * FROM verses
+           WHERE version_id = 'kjv' AND book_number = ? AND chapter = ?
+           ORDER BY verse_number`,
+          [bookNumber, chapter]
+        );
+      }
+    }
+
     console.log(`[bibleService] getChapterVerses fetched ${rows.length} verses`);
     return rows.map(r => ({
       id: r.id,
@@ -110,11 +172,12 @@ export async function getVerse(
   chapter: number,
   verseNumber: number
 ): Promise<Verse | null> {
+  const normVersion = (versionId || 'kjv').toLowerCase().trim();
   const db = getDatabase();
   const row = await db.getFirstAsync<any>(
     `SELECT * FROM verses
-     WHERE version_id = ? AND book_number = ? AND chapter = ? AND verse_number = ?`,
-    [versionId, bookNumber, chapter, verseNumber]
+     WHERE LOWER(version_id) = ? AND book_number = ? AND chapter = ? AND verse_number = ?`,
+    [normVersion, bookNumber, chapter, verseNumber]
   );
   if (!row) return null;
   return {
@@ -123,16 +186,17 @@ export async function getVerse(
     bookNumber: row.book_number,
     chapter: row.chapter,
     verseNumber: row.verse_number,
-    text: row.text,
+    text: cleanVerseText(row.text),
   };
 }
 
 /** Get total chapter count for a book */
 export async function getChapterCount(versionId: string, bookNumber: number): Promise<number> {
+  const normVersion = (versionId || 'kjv').toLowerCase().trim();
   const db = getDatabase();
   const row = await db.getFirstAsync<{ cnt: number }>(
-    'SELECT MAX(chapter) as cnt FROM verses WHERE version_id = ? AND book_number = ?',
-    [versionId, bookNumber]
+    'SELECT MAX(chapter) as cnt FROM verses WHERE LOWER(version_id) = ? AND book_number = ?',
+    [normVersion, bookNumber]
   );
   return row?.cnt ?? 0;
 }

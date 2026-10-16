@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useNavigation } from 'expo-router';
 import { useTheme } from '../../src/theme';
 import { Text } from '../../src/components/ui/Text';
 import { Card } from '../../src/components/ui/Card';
 import { Button } from '../../src/components/ui/Button';
+import { Header } from '../../src/components/shared/Header';
 import { getStreakCount, getReadingStats } from '../../src/services/readingProgressService';
 import { useReaderStore } from '../../src/stores/readerStore';
 import { getVerse } from '../../src/services/bibleService';
@@ -14,11 +15,15 @@ import { cleanVerseText, formatScriptureRef } from '../../src/utils/bibleUtils';
 import { getBookName } from '../../src/utils/bookTranslations';
 import { Ionicons } from '@expo/vector-icons';
 import { isDatabaseInitialized } from '../../src/services/database';
+import { loadVerseOfTheDay } from '../../src/services/verseOfTheDayService';
+import { useSettingsStore } from '../../src/stores/settingsStore';
 
 export default function HomeScreen() {
-  const { colors, spacing, borderRadius } = useTheme();
+  const { colors, spacing, borderRadius, isDark } = useTheme();
+  const navigation = useNavigation();
   const { currentBookNumber, currentChapter, currentVersionId, navigateTo } = useReaderStore();
-  
+  const { setThemeMode } = useSettingsStore();
+
   const [streak, setStreak] = useState(0);
   const [stats, setStats] = useState({ totalChaptersRead: 0, totalReadingTimeSecs: 0, chaptersReadThisWeek: 0 });
   const [votd, setVotd] = useState({ ref: 'John 3:16', text: 'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.', book: 43, chapter: 3, verse: 16 });
@@ -45,26 +50,24 @@ export default function HomeScreen() {
         const progressStats = await getReadingStats();
         if (active) setStats(progressStats);
 
-        // Fetch John 3:16 as default VOTD. If downloaded, get actual translation text.
-        const dbVerse = await getVerse(currentVersionId, 43, 3, 16);
-        if (dbVerse && active) {
-          setVotd({
-            ref: 'John 3:16',
-            text: cleanVerseText(dbVerse.text),
-            book: 43,
-            chapter: 3,
-            verse: 16
-          });
+        // Fetch dynamic randomized Verse of the Day for current user & version
+        const dailyVotd = await loadVerseOfTheDay(currentVersionId);
+        if (dailyVotd && active) {
+          setVotd(dailyVotd);
         }
       } catch (e) {
         console.warn('[Home] Failed to load statistics or VOTD from database:', e);
       }
     }
     loadHomeData();
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadHomeData();
+    });
     return () => {
       active = false;
+      unsubscribe();
     };
-  }, [currentVersionId]);
+  }, [currentVersionId, navigation]);
 
   const handleContinueReading = () => {
     router.push({
@@ -82,23 +85,9 @@ export default function HomeScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <ScrollView contentContainerStyle={[styles.container, { padding: spacing.base }]} showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={[styles.header, { marginBottom: spacing.lg }]}>
-          <View>
-            <Text variant="h1" style={styles.title}>
-              Miktam Bible
-            </Text>
-            <Text variant="bodySmall" color="textSecondary">
-              Your offline study companion
-            </Text>
-          </View>
-          <View style={[styles.streakContainer, { backgroundColor: colors.surface, borderRadius: borderRadius.full, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs }]}>
-            <Text style={styles.flame}>🔥</Text>
-            <Text variant="bodySmall" style={{ fontWeight: 'bold' }}>{streak}</Text>
-          </View>
-        </View>
+    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <Header title="Home" />
+      <ScrollView contentContainerStyle={[styles.container, { padding: spacing.base, paddingBottom: spacing.xl }]} showsVerticalScrollIndicator={false}>
 
         {/* Continue Reading Card */}
         <Card style={[styles.continueCard, { marginBottom: spacing.md }]} bordered>
@@ -169,13 +158,13 @@ export default function HomeScreen() {
 
 
           <TouchableOpacity
-            onPress={() => router.push('/(tabs)/profile')}
+            onPress={() => router.push('/(tabs)/plans' as any)}
             style={[styles.gridItem, { backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md }]}
           >
             <View style={[styles.iconCircle, { backgroundColor: colors.primaryMuted }]}>
-              <Ionicons name="settings-outline" color={colors.primary} size={24} />
+              <Ionicons name="ribbon-outline" color={colors.primary} size={24} />
             </View>
-            <Text variant="bodySmall" style={styles.gridText}>Settings</Text>
+            <Text variant="bodySmall" style={styles.gridText}>Reading Plans</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -208,6 +197,21 @@ export default function HomeScreen() {
             <Text variant="bodySmall" style={styles.gridText}>Calendar</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Subtle Footer Branding */}
+        <View style={styles.footerBranding}>
+          <Image
+            source={require('../../assets/icon.png')}
+            style={[styles.footerLogo, { borderColor: colors.border }]}
+            resizeMode="cover"
+          />
+          <Text variant="bodySmall" color="textSecondary" style={{ fontWeight: '600', marginTop: 8 }}>
+            Miktam Bible
+          </Text>
+          <Text variant="caption" color="textTertiary" style={{ marginTop: 2 }}>
+            Your offline study companion • v1.1.8
+          </Text>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -220,21 +224,18 @@ const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  footerBranding: {
     alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 28,
+    marginBottom: 20,
+    paddingVertical: 12,
   },
-  title: {
-    fontWeight: '800',
-  },
-  streakContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  flame: {
-    fontSize: 16,
-    marginRight: 4,
+  footerLogo: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
   },
   cardHeader: {
     flexDirection: 'row',

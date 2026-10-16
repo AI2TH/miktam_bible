@@ -9,6 +9,13 @@ export const CREATE_TABLES_SQL = [
   // BIBLE TEXT TABLES
   // =============================================
 
+  `CREATE TABLE IF NOT EXISTS bible_languages (
+    code            TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    local_name      TEXT,
+    version_count   INTEGER DEFAULT 1
+  )`,
+
   `CREATE TABLE IF NOT EXISTS bible_versions (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL,
@@ -44,7 +51,7 @@ export const CREATE_TABLES_SQL = [
     text,
     content=verses,
     content_rowid=id,
-    tokenize='porter unicode61'
+    tokenize='unicode61'
   )`,
 
   // Triggers to keep FTS in sync with verses table
@@ -180,6 +187,20 @@ export const CREATE_TABLES_SQL = [
     tokenize='porter unicode61'
   )`,
 
+  // Triggers to keep notes_fts in sync with notes table
+  `CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
+    INSERT INTO notes_fts(rowid, content) VALUES (new.rowid, new.content);
+  END`,
+
+  `CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
+    INSERT INTO notes_fts(notes_fts, rowid, content) VALUES('delete', old.rowid, old.content);
+  END`,
+
+  `CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE ON notes BEGIN
+    INSERT INTO notes_fts(notes_fts, rowid, content) VALUES('delete', old.rowid, old.content);
+    INSERT INTO notes_fts(rowid, content) VALUES (new.rowid, new.content);
+  END`,
+
   `CREATE TABLE IF NOT EXISTS recordings (
     id              TEXT PRIMARY KEY,
     title           TEXT,
@@ -206,6 +227,64 @@ export const CREATE_TABLES_SQL = [
     target_date     TEXT NOT NULL,
     created_at      TEXT DEFAULT (datetime('now'))
   )`,
+
+  `CREATE TABLE IF NOT EXISTS calendar_todos (
+    id              TEXT PRIMARY KEY,
+    date            TEXT NOT NULL,
+    title           TEXT NOT NULL,
+    is_completed    INTEGER DEFAULT 0,
+    created_at      TEXT DEFAULT (datetime('now'))
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_calendar_todos_date
+    ON calendar_todos(date)`,
+
+  `CREATE TABLE IF NOT EXISTS calendar_events (
+    id              TEXT PRIMARY KEY,
+    date            TEXT NOT NULL,
+    title           TEXT NOT NULL,
+    event_time      TEXT,
+    location        TEXT,
+    notes           TEXT,
+    reminder_enabled INTEGER DEFAULT 0,
+    created_at      TEXT DEFAULT (datetime('now'))
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_calendar_events_date
+    ON calendar_events(date)`,
+
+  `CREATE TABLE IF NOT EXISTS reading_plans (
+    id              TEXT PRIMARY KEY,
+    plan_type       TEXT NOT NULL,
+    title           TEXT NOT NULL,
+    duration_days   INTEGER NOT NULL,
+    start_date      TEXT NOT NULL,
+    is_active       INTEGER DEFAULT 1,
+    reminder_time   TEXT DEFAULT '08:00',
+    reminder_enabled INTEGER DEFAULT 1,
+    current_day     INTEGER DEFAULT 1,
+    created_at      TEXT DEFAULT (datetime('now'))
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS reading_plan_days (
+    id              TEXT PRIMARY KEY,
+    plan_id         TEXT NOT NULL,
+    day_number      INTEGER NOT NULL,
+    book_number     INTEGER NOT NULL,
+    start_chapter   INTEGER NOT NULL,
+    end_chapter     INTEGER NOT NULL,
+    scheduled_date  TEXT,
+    reading_label   TEXT,
+    is_completed    INTEGER DEFAULT 0,
+    completed_at    TEXT,
+    UNIQUE(plan_id, day_number)
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_reading_plan_days
+    ON reading_plan_days(plan_id, day_number)`,
+
+  `CREATE INDEX IF NOT EXISTS idx_reading_plan_days_date
+    ON reading_plan_days(scheduled_date)`,
 
   `CREATE TABLE IF NOT EXISTS reading_progress (
     id              TEXT PRIMARY KEY,
@@ -261,6 +340,33 @@ export const CREATE_TABLES_SQL = [
 
   // Insert default profile
   `INSERT OR IGNORE INTO profile (id) VALUES ('local_user')`,
+
+  // Register Condensed Bible & Comprehensive World Translations (Public Domain / Free Study Editions)
+  `INSERT OR IGNORE INTO bible_versions (id, name, language, is_downloaded, total_size_mb) VALUES
+    ('kjv', 'King James Version (1611/1769)', 'en', 1, 32.0),
+    ('con', 'Condensed Bible (Chronological Study)', 'en', 0, 15.0),
+    ('gen1599', 'Geneva Bible (1599 Reformation)', 'en', 0, 24.0),
+    ('web', 'World English Bible', 'en', 0, 30.0),
+    ('asv', 'American Standard Version (1901)', 'en', 0, 28.0),
+    ('bbe', 'Bible in Basic English', 'en', 0, 22.0),
+    ('rvr', 'Reina-Valera (Español)', 'es', 0, 26.0),
+    ('lsg', 'Louis Segond (Français)', 'fr', 0, 25.0),
+    ('lut', 'Luther Bibel (Deutsch)', 'de', 0, 28.0),
+    ('por', 'João Ferreira de Almeida (Português)', 'pt', 0, 26.0),
+    ('ita', 'Giovanni Diodati (Italiano)', 'it', 0, 25.0),
+    ('rus', 'Synodal Translation (Русский)', 'ru', 0, 29.0),
+    ('cuv', 'Chinese Union Version (中文)', 'zh', 0, 35.0),
+    ('ara', 'Smith & Van Dyke (العربية)', 'ar', 0, 27.0),
+    ('kor', 'Korean Revised Version (한국어)', 'ko', 0, 28.0),
+    ('grc', 'Textus Receptus (Greek NT / LXX)', 'el', 0, 38.0),
+    ('hin', 'Hindi Holy Bible (हिन्दी)', 'hi', 0, 34.0),
+    ('tam', 'Tamil Holy Bible (தமிழ்)', 'ta', 0, 36.0),
+    ('tel', 'Telugu Holy Bible (తెలుగు)', 'te', 0, 36.0),
+    ('mal', 'Malayalam Holy Bible (മലയാളം)', 'ml', 0, 35.0),
+    ('kan', 'Kannada Holy Bible (ಕನ್ನಡ)', 'kn', 0, 35.0),
+    ('vie', '1934 Vietnamese Bible (Tiếng Việt)', 'vi', 0, 27.0),
+    ('ron', 'Dumitru Cornilescu (Română)', 'ro', 0, 26.0),
+    ('fin', 'Pyhä Raamattu (Suomi)', 'fi', 0, 25.0)`,
 
   // Register available AI models
   `INSERT OR IGNORE INTO ai_models (id, model_type, display_name, description, file_size_mb, ram_required_mb, download_url, version) VALUES

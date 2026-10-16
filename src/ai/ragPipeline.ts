@@ -129,10 +129,12 @@ export async function askBible(
  * Finds patterns like "John 3:16", "Genesis 1:1-3", "Romans 8:28"
  */
 function parseVerseCitations(text: string): VerseRef[] {
-  const BOOK_PATTERNS = Object.entries(BOOK_NAMES).map(([num, name]) => ({
-    bookNumber: parseInt(num),
-    pattern: new RegExp(`${name}\\s+(\\d+):(\\d+)(?:-(\\d+))?`, 'gi'),
-  }));
+  const BOOK_PATTERNS = Object.entries(BOOK_NAMES)
+    .sort((a, b) => b[1].length - a[1].length)
+    .map(([num, name]) => ({
+      bookNumber: parseInt(num, 10),
+      pattern: new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+(\\d+):(\\d+)(?:-(\\d+))?\\b`, 'gi'),
+    }));
 
   const citations: VerseRef[] = [];
   const seen = new Set<string>();

@@ -1,6 +1,17 @@
 import { getDatabase } from './database';
 import { BOOK_NAMES } from '../utils/constants';
+import { getBookName } from '../utils/bookTranslations';
+import { cleanVerseText } from '../utils/bibleUtils';
 import type { OriginalWord, StrongsEntry, CrossReferenceWithText } from '../types/concordance';
+
+function safeJsonParse<T>(jsonStr: any, fallback: T): T {
+  if (!jsonStr || typeof jsonStr !== 'string') return fallback;
+  try {
+    return JSON.parse(jsonStr) as T;
+  } catch {
+    return fallback;
+  }
+}
 
 // ─── INTERLINEAR (Word-by-Word) ──────────────────
 
@@ -30,7 +41,7 @@ export async function getOriginalWords(
     transliteration: r.transliteration,
     strongsNumber: r.strongs_number,
     language: r.language,
-    morphology: r.morphology ? JSON.parse(r.morphology) : null,
+    morphology: safeJsonParse(r.morphology, null),
     gloss: r.gloss,
   }));
 }
@@ -54,7 +65,7 @@ export async function getStrongsEntry(strongsNumber: string): Promise<StrongsEnt
     definition: row.definition,
     shortDefinition: row.short_definition || '',
     usageCount: row.usage_count,
-    kjvTranslations: row.kjv_translations ? JSON.parse(row.kjv_translations) : [],
+    kjvTranslations: safeJsonParse(row.kjv_translations, []),
   };
 }
 
@@ -91,7 +102,7 @@ export async function searchStrongs(query: string): Promise<StrongsEntry[]> {
         definition: row.definition,
         shortDefinition: row.short_definition || '',
         usageCount: row.usage_count,
-        kjvTranslations: row.kjv_translations ? JSON.parse(row.kjv_translations) : [],
+        kjvTranslations: safeJsonParse(row.kjv_translations, []),
       }];
     }
   }
@@ -113,20 +124,35 @@ export async function searchStrongs(query: string): Promise<StrongsEntry[]> {
         definition: row.definition,
         shortDefinition: row.short_definition || '',
         usageCount: row.usage_count,
-        kjvTranslations: row.kjv_translations ? JSON.parse(row.kjv_translations) : [],
+        kjvTranslations: safeJsonParse(row.kjv_translations, []),
       }));
     }
   }
 
-  // Case 3: Regular text FTS match in definitions
+  // Case 3: Regular text FTS match in definitions + KJV translations UNION
+  const cleanQuery = query.replace(/['\"*]/g, '').trim();
+  if (!cleanQuery) return [];
+
+  const likePattern = `%"${cleanQuery.toLowerCase()}"%`;
+  const ftsMatch = `"${cleanQuery}"*`;
   const rows = await db.getAllAsync<any>(
-    `SELECT sd.*, f.rank
+    `SELECT sd.*, 1 as is_kjv_match, 0 as fts_rank
+     FROM strongs_dictionary sd
+     WHERE sd.kjv_translations LIKE ?
+
+     UNION ALL
+
+     SELECT sd.*, 0 as is_kjv_match, f.rank as fts_rank
      FROM strongs_fts f
      JOIN strongs_dictionary sd ON sd.rowid = f.rowid
      WHERE f.strongs_fts MATCH ?
-     ORDER BY f.rank
+       AND sd.rowid NOT IN (
+         SELECT rowid FROM strongs_dictionary WHERE kjv_translations LIKE ?
+       )
+
+     ORDER BY is_kjv_match DESC, fts_rank
      LIMIT 500`,
-    [query]
+    [likePattern, ftsMatch, likePattern]
   );
 
   return rows.map((r: any) => ({
@@ -138,7 +164,7 @@ export async function searchStrongs(query: string): Promise<StrongsEntry[]> {
     definition: r.definition,
     shortDefinition: r.short_definition || '',
     usageCount: r.usage_count,
-    kjvTranslations: r.kjv_translations ? JSON.parse(r.kjv_translations) : [],
+    kjvTranslations: safeJsonParse(r.kjv_translations, []),
   }));
 }
 
@@ -150,6 +176,7 @@ export async function getVersesByStrongs(
   strongsNumber: string,
   versionId: string = 'kjv'
 ): Promise<{ bookNumber: number; chapter: number; verseNumber: number; text: string; bookName: string }[]> {
+  const normVersion = (versionId || 'kjv').toLowerCase().trim();
   const db = getDatabase();
   const rows = await db.getAllAsync<any>(
     `SELECT DISTINCT ow.book_number, ow.chapter, ow.verse_number, v.text
@@ -157,17 +184,17 @@ export async function getVersesByStrongs(
      JOIN verses v ON v.book_number = ow.book_number
        AND v.chapter = ow.chapter
        AND v.verse_number = ow.verse_number
-       AND v.version_id = ?
+       AND LOWER(v.version_id) = ?
      WHERE ow.strongs_number = ?
      ORDER BY ow.book_number, ow.chapter, ow.verse_number`,
-    [versionId, strongsNumber]
+    [normVersion, strongsNumber]
   );
   return rows.map(r => ({
     bookNumber: r.book_number,
     chapter: r.chapter,
     verseNumber: r.verse_number,
-    text: r.text,
-    bookName: BOOK_NAMES[r.book_number] || '',
+    text: cleanVerseText(r.text),
+    bookName: getBookName(r.book_number, normVersion) || BOOK_NAMES[r.book_number] || '',
   }));
 }
 
@@ -183,22 +210,27 @@ export async function getCrossReferences(
   verseNumber: number,
   versionId: string = 'kjv'
 ): Promise<CrossReferenceWithText[]> {
+  const normVersion = (versionId || 'kjv').toLowerCase().trim();
   const db = getDatabase();
   const rows = await db.getAllAsync<any>(
-    `SELECT cr.*, v.text as target_text
+    `SELECT cr.*, COALESCE(v.text, v_kjv.text, '') as target_text
      FROM cross_references cr
      LEFT JOIN verses v ON v.book_number = cr.target_book
        AND v.chapter = cr.target_chapter
        AND v.verse_number = cr.target_verse_start
-       AND v.version_id = ?
+       AND LOWER(v.version_id) = ?
+     LEFT JOIN verses v_kjv ON v_kjv.book_number = cr.target_book
+       AND v_kjv.chapter = cr.target_chapter
+       AND v_kjv.verse_number = cr.target_verse_start
+       AND LOWER(v_kjv.version_id) = 'kjv'
      WHERE cr.source_book = ? AND cr.source_chapter = ? AND cr.source_verse_start = ?
      ORDER BY cr.confidence DESC, cr.votes DESC
      LIMIT 20`,
-    [versionId, bookNumber, chapter, verseNumber]
+    [normVersion, bookNumber, chapter, verseNumber]
   );
 
   return rows.map(r => {
-    const targetBookName = BOOK_NAMES[r.target_book] || '';
+    const targetBookName = getBookName(r.target_book, normVersion) || BOOK_NAMES[r.target_book] || '';
     const targetLabel = r.target_verse_end
       ? `${targetBookName} ${r.target_chapter}:${r.target_verse_start}-${r.target_verse_end}`
       : `${targetBookName} ${r.target_chapter}:${r.target_verse_start}`;
@@ -216,7 +248,7 @@ export async function getCrossReferences(
       relationshipType: r.relationship_type,
       confidence: r.confidence,
       votes: r.votes,
-      targetText: r.target_text || '',
+      targetText: cleanVerseText(r.target_text || ''),
       targetBookName,
       targetLabel,
     };
