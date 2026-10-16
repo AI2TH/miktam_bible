@@ -43,7 +43,7 @@ export default function BookPickerScreen() {
   const activeVersionTitle = activeVersion ? `${activeVersion.name} (${activeVersion.id.toUpperCase()})` : (currentVersionId || 'KJV').toUpperCase();
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.container, { backgroundColor: colors.background }]}>
       <Header title="Holy Bible" />
 
       <View style={[styles.content, { paddingHorizontal: spacing.base }]}>

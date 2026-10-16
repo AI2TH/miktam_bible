@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useNavigation } from 'expo-router';
 import { useTheme } from '../../src/theme';
 import { Text } from '../../src/components/ui/Text';
 import { Card } from '../../src/components/ui/Card';
 import { Button } from '../../src/components/ui/Button';
+import { Header } from '../../src/components/shared/Header';
 import { getStreakCount, getReadingStats } from '../../src/services/readingProgressService';
 import { useReaderStore } from '../../src/stores/readerStore';
 import { getVerse } from '../../src/services/bibleService';
@@ -84,61 +85,9 @@ export default function HomeScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <ScrollView contentContainerStyle={[styles.container, { padding: spacing.base }]} showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={[styles.header, { marginBottom: spacing.lg }]}>
-          <View style={{ flex: 1 }}>
-            <Text variant="h1" style={styles.title}>
-              Miktam Bible
-            </Text>
-            <Text variant="bodySmall" color="textSecondary" style={{ marginTop: 2 }}>
-              Your offline study companion
-            </Text>
-          </View>
-
-          <View style={styles.headerRightActions}>
-            {/* Toggle between Dark 🌙 and Light ☀️ */}
-            <TouchableOpacity
-              onPress={() => setThemeMode(isDark ? 'light' : 'dark')}
-              style={[
-                styles.themeToggleBtn,
-                {
-                  backgroundColor: colors.surface,
-                  borderColor: colors.border,
-                  borderRadius: borderRadius.full,
-                },
-              ]}
-              activeOpacity={0.7}
-              accessibilityLabel={`Switch to ${isDark ? 'light' : 'dark'} mode`}
-            >
-              <Ionicons
-                name={isDark ? 'moon' : 'sunny'}
-                size={18}
-                color={isDark ? '#F7C844' : '#E5A93C'}
-              />
-            </TouchableOpacity>
-
-            {/* Streak Flame Badge */}
-            <View
-              style={[
-                styles.streakContainer,
-                {
-                  backgroundColor: colors.surface,
-                  borderColor: colors.border,
-                  borderRadius: borderRadius.full,
-                  paddingHorizontal: spacing.sm,
-                  paddingVertical: spacing.xs,
-                },
-              ]}
-            >
-              <Text style={styles.flame}>🔥</Text>
-              <Text variant="bodySmall" style={{ fontWeight: 'bold' }}>
-                {streak}
-              </Text>
-            </View>
-          </View>
-        </View>
+    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <Header title="Home" />
+      <ScrollView contentContainerStyle={[styles.container, { padding: spacing.base, paddingBottom: spacing.xl }]} showsVerticalScrollIndicator={false}>
 
         {/* Continue Reading Card */}
         <Card style={[styles.continueCard, { marginBottom: spacing.md }]} bordered>
@@ -248,6 +197,21 @@ export default function HomeScreen() {
             <Text variant="bodySmall" style={styles.gridText}>Calendar</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Subtle Footer Branding */}
+        <View style={styles.footerBranding}>
+          <Image
+            source={require('../../assets/icon.png')}
+            style={[styles.footerLogo, { borderColor: colors.border }]}
+            resizeMode="cover"
+          />
+          <Text variant="bodySmall" color="textSecondary" style={{ fontWeight: '600', marginTop: 8 }}>
+            Miktam Bible
+          </Text>
+          <Text variant="caption" color="textTertiary" style={{ marginTop: 2 }}>
+            Your offline study companion • v1.1.8
+          </Text>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -260,36 +224,18 @@ const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  footerBranding: {
     alignItems: 'center',
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-  },
-  headerRightActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  themeToggleBtn: {
-    width: 36,
-    height: 36,
-    borderWidth: 1,
     justifyContent: 'center',
-    alignItems: 'center',
+    marginTop: 28,
+    marginBottom: 20,
+    paddingVertical: 12,
   },
-  streakContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  footerLogo: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 1,
-  },
-  flame: {
-    fontSize: 16,
-    marginRight: 4,
   },
   cardHeader: {
     flexDirection: 'row',

@@ -128,15 +128,12 @@ export default function PlansScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <Header title="Bible Reading Plans" />
+    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.container, { backgroundColor: colors.background }]}>
+      <Header title="Reading Plans" />
       <ScrollView
-        contentContainerStyle={[styles.content, { padding: spacing.base, gap: spacing.lg }]}
+        contentContainerStyle={[styles.content, { padding: spacing.base, gap: spacing.lg, paddingBottom: spacing['2xl'] }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Streak Flame Badge */}
-        <StreakBadge streakCount={streak} />
-
         {/* Dedicated Reading Plan Section & Custom Generator */}
         <ReadingPlanSection
           plan={readingPlan}

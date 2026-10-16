@@ -28,6 +28,9 @@ interface ReaderState {
   dualLanguageEnabled: boolean;
   secondaryVersionId: string | null;
 
+  // Streak state
+  streak: number;
+
   // Actions
   setVersion: (versionId: string) => void;
   navigateTo: (bookNumber: number, chapter: number) => void;
@@ -42,6 +45,8 @@ interface ReaderState {
   setSecondaryVersion: (versionId: string | null) => void;
   toggleDualLanguage: (versionId?: string) => void;
   swapLanguages: () => void;
+  setStreak: (streak: number) => void;
+  refreshStreak: () => Promise<number>;
 }
 
 export const useReaderStore = create<ReaderState>((set, get) => ({
@@ -58,6 +63,21 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
 
   dualLanguageEnabled: false,
   secondaryVersionId: 'kjv',
+
+  streak: 0,
+  setStreak: (count: number) => set({ streak: count }),
+  refreshStreak: async () => {
+    try {
+      const { isDatabaseInitialized } = await import('../services/database');
+      if (!isDatabaseInitialized()) return get().streak;
+      const { getStreakCount } = await import('../services/readingProgressService');
+      const count = await getStreakCount();
+      set({ streak: count });
+      return count;
+    } catch {
+      return get().streak;
+    }
+  },
 
   setVersion: (versionId) => set({ currentVersionId: (versionId || 'kjv').toLowerCase().trim() }),
 

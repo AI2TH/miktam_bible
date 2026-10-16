@@ -7,6 +7,7 @@ import { LogBox, View, Image, StyleSheet, ActivityIndicator, Text } from 'react-
 import { initDatabase } from '../src/services/database';
 import { initSafeStorage } from '../src/utils/storage';
 import { useSettingsStore } from '../src/stores/settingsStore';
+import { useTheme } from '../src/theme';
 
 LogBox.ignoreAllLogs();
 SplashScreen.preventAutoHideAsync();
@@ -23,6 +24,7 @@ export default function RootLayout() {
   });
 
   const [initError, setInitError] = useState<string | null>(null);
+  const { isDark } = useTheme();
 
   useEffect(() => {
     console.log('[RootLayout] Initializing database and storage...');
@@ -70,7 +72,7 @@ export default function RootLayout() {
 
   return (
     <>
-      <StatusBar style="light" />
+      <StatusBar style={isDark ? 'light' : 'dark'} />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="chat" options={{ presentation: 'modal' }} />

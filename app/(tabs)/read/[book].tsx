@@ -41,7 +41,7 @@ export default function BookChaptersScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.container, { backgroundColor: colors.background }]}>
       <Header title={bookName} showBack={true} onBack={handleBack} />
       <View style={[styles.content, { padding: spacing.base }]}>
         <ChapterGrid totalChapters={totalChapters} onSelectChapter={handleSelectChapter} />
