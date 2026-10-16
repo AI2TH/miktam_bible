@@ -383,13 +383,9 @@ export default function CalendarScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <Header title="Promises, Calendar & Planner" />
-      <ScrollView contentContainerStyle={[styles.content, { padding: spacing.base, gap: spacing.lg }]} showsVerticalScrollIndicator={false}>
-        
-        {/* Streak Flame Badge */}
-        <StreakBadge streakCount={streak} />
-
+    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.container, { backgroundColor: colors.background }]}>
+      <Header title="Calendar & Planner" />
+      <ScrollView contentContainerStyle={[styles.content, { padding: spacing.base, gap: spacing.lg, paddingBottom: spacing['2xl'] }]} showsVerticalScrollIndicator={false}>
         {/* ─── 1. PROMISE VERSES ON TOP (Gold Premium Aesthetic) ─── */}
         <View style={styles.sectionHeader}>
           <Ionicons name="sparkles" size={18} color={colors.primary} />

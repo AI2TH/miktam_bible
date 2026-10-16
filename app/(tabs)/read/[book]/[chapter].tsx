@@ -250,12 +250,13 @@ export default function ChapterReaderScreen() {
   const title = `${getBookName(currentBookNumber, currentVersionId)} ${currentChapter}`;
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
       <Header
         title={title}
         showBack={true}
         onBack={handleBack}
+        showStreak={false}
         rightAction={
           <View style={styles.headerRight}>
             <TouchableOpacity 

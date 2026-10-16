@@ -53,9 +53,9 @@ export default function SearchScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.container, { backgroundColor: colors.background }]}>
       <Header
-        title="Search Scripture"
+        title="Search"
         rightAction={
           <TouchableOpacity
             onPress={() => router.push('/concordance/search')}
