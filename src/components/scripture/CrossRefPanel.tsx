@@ -1,8 +1,9 @@
 import React from 'react';
-import { View, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { useTheme } from '../../theme';
 import { Text } from '../ui/Text';
 import { Divider } from '../ui/Divider';
+import { cleanVerseText } from '../../utils/bibleUtils';
 import type { CrossReferenceWithText } from '../../types/concordance';
 
 interface CrossRefPanelProps {
@@ -83,7 +84,7 @@ export function CrossRefPanel({ refs, onNavigate }: CrossRefPanelProps) {
               </View>
               {item.targetText ? (
                 <Text variant="scriptureSmall" color="textPrimary" style={styles.targetText}>
-                  "{item.targetText}"
+                  "{cleanVerseText(item.targetText)}"
                 </Text>
               ) : (
                 <Text variant="caption" color="textTertiary" style={styles.targetText}>
@@ -98,12 +99,12 @@ export function CrossRefPanel({ refs, onNavigate }: CrossRefPanelProps) {
   };
 
   return (
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.container}>
+    <View style={styles.container}>
       {renderGroup('Quotations', '📜', groupedRefs.quotation, '→')}
       {renderGroup('Parallels', '‖', groupedRefs.parallel, '↔')}
       {renderGroup('Allusions', '💭', groupedRefs.allusion, '~')}
       {renderGroup('Thematic', '🔗', groupedRefs.thematic, '🔗')}
-    </ScrollView>
+    </View>
   );
 }
 

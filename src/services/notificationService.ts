@@ -12,6 +12,16 @@ Notifications.setNotificationHandler({
   }),
 });
 
+// Set up Android notification channel for Android 8.0+
+if (Platform.OS === 'android') {
+  Notifications.setNotificationChannelAsync('default', {
+    name: 'Daily Study Reminders',
+    importance: Notifications.AndroidImportance.HIGH,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: '#C9A55C',
+  }).catch((e) => console.warn('[Notifications] Failed to setup channel:', e));
+}
+
 /** Request notification permissions from the user */
 export async function requestNotificationPermissions(): Promise<boolean> {
   if (Platform.OS === 'web') return false;
@@ -44,6 +54,7 @@ export async function scheduleDailyReminder(hour: number, minute: number): Promi
       type: Notifications.SchedulableTriggerInputTypes.DAILY,
       hour,
       minute,
+      channelId: 'default',
     },
   });
 

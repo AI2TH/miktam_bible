@@ -9,6 +9,7 @@ import { Text } from '../../src/components/ui/Text';
 import { useSearch } from '../../src/hooks/useSearch';
 import { useReaderStore } from '../../src/stores/readerStore';
 import { getBookName } from '../../src/utils/bookTranslations';
+import { getVersionAbbreviation } from '../../src/utils/bibleUtils';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -16,7 +17,7 @@ export default function SearchScreen() {
   const { colors, spacing, borderRadius } = useTheme();
   const { currentVersionId, navigateTo } = useReaderStore();
   const [query, setQuery] = useState('');
-  const { results, loading, search, clear, correctedQuery } = useSearch();
+  const { results, loading, loadingMore, hasMore, search, loadMore, clear, correctedQuery } = useSearch();
 
   // Premium Live Search on typing with a 300ms debounce
   React.useEffect(() => {
@@ -52,9 +53,9 @@ export default function SearchScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.container, { backgroundColor: colors.background }]}>
       <Header
-        title="Search Scripture"
+        title="Search"
         rightAction={
           <TouchableOpacity
             onPress={() => router.push('/concordance/search')}
@@ -78,7 +79,7 @@ export default function SearchScreen() {
             value={query}
             onChangeText={setQuery}
             onSubmitEditing={handleSearch}
-            placeholder={`Search in ${currentVersionId.toUpperCase()}...`}
+            placeholder={`Search in ${getVersionAbbreviation(currentVersionId)}...`}
             placeholderTextColor={colors.textTertiary}
             style={[styles.input, { color: colors.textPrimary }]}
             returnKeyType="search"
@@ -116,6 +117,25 @@ export default function SearchScreen() {
           data={results}
           keyExtractor={(item) => `${item.verse.versionId}:${item.verse.bookNumber}:${item.verse.chapter}:${item.verse.verseNumber}`}
           contentContainerStyle={{ padding: spacing.base, gap: spacing.md }}
+          onEndReached={hasMore ? loadMore : undefined}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={
+            hasMore ? (
+              <TouchableOpacity
+                onPress={loadMore}
+                disabled={loadingMore}
+                style={[styles.loadMore, { paddingVertical: spacing.md }]}
+              >
+                {loadingMore ? (
+                  <ActivityIndicator color={colors.primary} />
+                ) : (
+                  <Text variant="body" color="primary" style={{ fontWeight: '600' }}>
+                    Load more results
+                  </Text>
+                )}
+              </TouchableOpacity>
+            ) : null
+          }
           renderItem={({ item }) => (
             <VerseCard
               bookName={getBookName(item.verse.bookNumber, currentVersionId)}
@@ -161,5 +181,9 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  loadMore: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

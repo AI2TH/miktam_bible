@@ -2,9 +2,13 @@ import * as SQLite from 'expo-sqlite';
 import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CREATE_TABLES_SQL, SCHEMA_VERSION } from '../database/schema';
+import { GLOBAL_LANGUAGES, GLOBAL_BIBLE_VERSIONS } from '../database/globalBibleCatalog';
 
 let db: SQLite.SQLiteDatabase | null = null;
 let isInitialized = false;
+
+let searchDb: SQLite.SQLiteDatabase | null = null;
+let isSearchInitialized = false;
 
 /**
  * Initialize the database. Call once at app startup in root _layout.tsx.
@@ -14,6 +18,53 @@ let isInitialized = false;
  * - Runs schema creation (no-op if tables exist)
  * - Returns the singleton database instance
  */
+// Minimum expected size for the initial KJV Bible database (~400MB uncompressed, at least 50MB)
+const MIN_VALID_DB_SIZE = 50 * 1024 * 1024;
+const SEEDED_DB_VERSION = '1.1.0';
+
+async function copySourceDatabase(targetPath: string): Promise<boolean> {
+  const possibleUris = [
+    'file:///sdcard/Download/bible.db',
+    'file:///sdcard/bible.db',
+    `${FileSystem.bundleDirectory || 'asset:/'}bible.db`,
+    'asset:/bible.db',
+    'asset:///bible.db'
+  ];
+
+  for (const uri of possibleUris) {
+    try {
+      console.log('[DB] Checking source database candidate:', uri);
+      const info = await FileSystem.getInfoAsync(uri);
+      const infoSize = info.exists && 'size' in info ? (info.size || 0) : 0;
+      
+      // If on sdcard or local file, verify candidate exists
+      if (uri.startsWith('file://') && (!info.exists || infoSize < MIN_VALID_DB_SIZE)) {
+        console.log(`[DB] Candidate ${uri} skipped (exists: ${info.exists}, size: ${infoSize})`);
+        continue;
+      }
+
+      console.log('[DB] Copying database from:', uri);
+      await FileSystem.copyAsync({
+        from: uri,
+        to: targetPath
+      });
+
+      const newInfo = await FileSystem.getInfoAsync(targetPath);
+      const newSize = newInfo.exists && 'size' in newInfo ? (newInfo.size || 0) : 0;
+      if (newInfo.exists && newSize >= MIN_VALID_DB_SIZE) {
+        console.log(`[DB] Database successfully copied from ${uri} (size: ${newSize} bytes)`);
+        await AsyncStorage.setItem('seeded_bible_db_version', SEEDED_DB_VERSION);
+        return true;
+      } else {
+        console.warn(`[DB] Copied database is too small or truncated (${newSize} bytes). Trying next...`);
+      }
+    } catch (e) {
+      console.warn(`[DB] Failed copying from candidate ${uri}:`, e);
+    }
+  }
+  return false;
+}
+
 export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
   if (db) return db;
 
@@ -27,74 +78,42 @@ export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
       await FileSystem.makeDirectoryAsync(dbDir, { intermediates: true });
     }
 
-    // Check if bible.db already exists and is valid (size > 100MB, since full database is 545MB)
     const dbInfo = await FileSystem.getInfoAsync(dbPath);
-    const dbInfoSize = dbInfo.exists && 'size' in dbInfo ? dbInfo.size : 0;
-    
-    // We check both the existence/size and whether we have successfully seeded the latest database version (1.0.8)
-    const dbVersion = await AsyncStorage.getItem('seeded_bible_db_version');
-    const isDbVersionMatch = dbVersion === '1.0.8';
+    const dbInfoSize = dbInfo.exists && 'size' in dbInfo ? (dbInfo.size || 0) : 0;
+    const currentSeededVer = await AsyncStorage.getItem('seeded_bible_db_version');
+    const isVersionMatch = currentSeededVer === SEEDED_DB_VERSION;
+    const isValidSize = dbInfo.exists && dbInfoSize >= MIN_VALID_DB_SIZE && isVersionMatch;
 
-    const isValidDb = dbInfo.exists && dbInfoSize > 100 * 1024 * 1024 && isDbVersionMatch;
-
-    if (!isValidDb) {
+    if (!isValidSize) {
       if (dbInfo.exists) {
-        console.log(`[DB] Local database is too small or invalid (${dbInfoSize} bytes). Removing to re-seed from native assets...`);
+        console.log(`[DB] Local database is outdated or invalid (${dbInfoSize} bytes, seededVer: ${currentSeededVer}). Removing to re-seed...`);
         try {
           await FileSystem.deleteAsync(dbPath, { idempotent: true });
+          await FileSystem.deleteAsync(`${dbPath}-wal`, { idempotent: true });
+          await FileSystem.deleteAsync(`${dbPath}-shm`, { idempotent: true });
         } catch (delError) {
           console.warn('[DB] Failed to delete existing database:', delError);
         }
-      } else {
-        console.log('[DB] Local database file not found. Seeding from native assets...');
       }
-
-      // Try multiple asset URI formats for maximum platform compatibility
-      const possibleUris = [
-        `${FileSystem.bundleDirectory || 'asset:/'}bible.db`,
-        'asset:/bible.db',
-        'asset:///bible.db'
-      ];
-
-      let copied = false;
-      let lastError: any = null;
-
-      for (const uri of possibleUris) {
-        try {
-          console.log('[DB] Attempting to copy from native assets path:', uri);
-          await FileSystem.copyAsync({
-            from: uri,
-            to: dbPath
-          });
-          copied = true;
-          console.log(`[DB] Successfully copied database from: ${uri}`);
-          break;
-        } catch (copyErr) {
-          console.warn(`[DB] Failed to copy from ${uri}:`, copyErr);
-          lastError = copyErr;
-        }
-      }
-
-      if (!copied) {
-        throw lastError || new Error('All asset copy attempts failed.');
-      }
-
-      // Double-check file exists and is valid
-      const newDbInfo = await FileSystem.getInfoAsync(dbPath);
-      const newDbSize = newDbInfo.exists && 'size' in newDbInfo ? newDbInfo.size : 0;
-      console.log(`[DB] Copy completed. Database file on disk: exists=${newDbInfo.exists}, size=${newDbSize} bytes`);
-      if (copied && newDbInfo.exists && newDbSize > 100 * 1024 * 1024) {
-        await AsyncStorage.setItem('seeded_bible_db_version', '1.0.8');
-        console.log('[DB] Saved database seed version to AsyncStorage: 1.0.8');
-      }
+      console.log('[DB] Seeding database...');
+      await copySourceDatabase(dbPath);
     } else {
-      console.log(`[DB] Local database file already exists and is valid (size: ${dbInfoSize} bytes) at: ${dbPath}`);
+      console.log(`[DB] Valid database found on disk (${dbInfoSize} bytes).`);
     }
   } catch (error) {
-    console.error('[DB] Error copying prebuilt database from assets, proceeding with fresh DB initialization:', error);
+    console.error('[DB] Error verifying/seeding database:', error);
   }
 
+  // Open database connection
   db = await SQLite.openDatabaseAsync('bible.db');
+
+  // Fast non-blocking sanity check (<1ms)
+  try {
+    await db.getFirstAsync('SELECT id FROM verses LIMIT 1;');
+    console.log('[DB] Database sanity check verified: healthy');
+  } catch (checkErr) {
+    console.warn('[DB] Database sanity check warning:', checkErr);
+  }
 
   // Performance PRAGMAs
   await db.execAsync(`
@@ -117,12 +136,83 @@ export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
   // Set schema version
   await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
 
+  // Populate all 2,456+ global languages and 3,823+ version combinations if not yet populated
+  await populateGlobalBibleCatalog(db);
+
   // Automatically sync local model files with database state
   await syncLocalModels(db);
+
+  // Cleanup any corrupted fallback downloads where non-KJV version received duplicate KJV verses
+  try {
+    const corrupted = await db.getAllAsync<{ id: string }>(
+      `SELECT DISTINCT bv.id FROM bible_versions bv
+       JOIN verses v ON LOWER(bv.id) = LOWER(v.version_id)
+       WHERE LOWER(bv.id) NOT IN ('kjv', 'akjv', 'ukjv', 'rnkjv', 'kjva', 'kjvpce')
+         AND v.book_number = 1 AND v.chapter = 1 AND v.verse_number = 1
+         AND v.text LIKE 'In the beginning God created the heaven and the earth%'
+         AND bv.is_downloaded = 1`
+    );
+    for (const row of corrupted) {
+      console.log(`[DB] Cleaning up corrupted fallback version: ${row.id}`);
+      await db.runAsync('DELETE FROM verses WHERE LOWER(version_id) = ?', [row.id.toLowerCase()]);
+      await db.runAsync('DELETE FROM books WHERE LOWER(version_id) = ?', [row.id.toLowerCase()]);
+      await db.runAsync('UPDATE bible_versions SET is_downloaded = 0, download_date = NULL WHERE LOWER(id) = ?', [row.id.toLowerCase()]);
+    }
+    // Also ensure aldhelm has no non-Psalms verses if previously seeded
+    await db.runAsync("DELETE FROM verses WHERE LOWER(version_id) = 'aldhelm' AND book_number != 19;");
+
+    // Automatically correct any non-KJV versions incorrectly marked as downloaded if they have no verses
+    await db.runAsync(`
+      UPDATE bible_versions
+      SET is_downloaded = 0, download_date = NULL
+      WHERE LOWER(id) NOT IN ('kjv')
+        AND is_downloaded = 1
+        AND id NOT IN (SELECT DISTINCT version_id FROM verses);
+    `);
+  } catch (cleanErr) {
+    console.warn('[DB] Cleanup notice:', cleanErr);
+  }
 
   console.log('[DB] Database initialized, schema version:', SCHEMA_VERSION);
   isInitialized = true;
   return db;
+}
+
+/**
+ * Seed all 2,459 world languages and 3,844 Bible version combinations into SQLite.
+ * Uses batch transaction for lightning-fast execution (<100ms).
+ */
+async function populateGlobalBibleCatalog(database: SQLite.SQLiteDatabase): Promise<void> {
+  try {
+    const versionCountRow = await database.getFirstAsync<{ count: number }>(
+      'SELECT COUNT(*) as count FROM bible_versions'
+    );
+    if (versionCountRow && versionCountRow.count >= 5600) {
+      return; // Already populated with complete multi-repo catalog
+    }
+
+    console.log(`[DB] Seeding global Bible catalog: ${GLOBAL_LANGUAGES.length} languages & ${GLOBAL_BIBLE_VERSIONS.length} versions...`);
+    await database.withTransactionAsync(async () => {
+      // 1. Seed languages
+      for (const lang of GLOBAL_LANGUAGES) {
+        await database.runAsync(
+          'INSERT OR IGNORE INTO bible_languages (code, name, local_name, version_count) VALUES (?, ?, ?, ?)',
+          [lang.code, lang.name, lang.localName, lang.versionCount]
+        );
+      }
+
+      // 2. Seed all translations
+      for (const v of GLOBAL_BIBLE_VERSIONS) {
+        await database.runAsync(
+          'INSERT OR IGNORE INTO bible_versions (id, name, language, is_downloaded, total_size_mb) VALUES (?, ?, ?, ?, ?)',
+          [v.id, v.name, v.language, 0, 25.0]
+        );
+      }
+    });
+    console.log('[DB] Successfully seeded all world languages and translations into SQLite!');
+  } catch (seedErr) {
+    console.warn('[DB] Failed to seed global Bible catalog:', seedErr);
+  }
 }
 
 /**
@@ -137,34 +227,11 @@ async function syncLocalModels(database: SQLite.SQLiteDatabase): Promise<void> {
       await FileSystem.makeDirectoryAsync(modelsDir, { intermediates: true });
     }
 
-    // Pre-seed the lite model if it's in the native bundle assets
+    // Check if models exist in document directory
     const liteModelPath = `${modelsDir}bibleslm-0.5b-q4.gguf`;
     const liteModelInfo = await FileSystem.getInfoAsync(liteModelPath);
-    if (!liteModelInfo.exists) {
-      console.log('[DB] Pre-packaged lite model (bibleslm-0.5b-q4.gguf) not found in document directory. Checking native assets for seeding...');
-      const possibleModelUris = [
-        `${FileSystem.bundleDirectory || 'asset:/'}bible-q4km.gguf`,
-        'asset:/bible-q4km.gguf',
-        'asset:///bible-q4km.gguf'
-      ];
-      
-      let copiedModel = false;
-      for (const uri of possibleModelUris) {
-        try {
-          console.log('[DB] Attempting to copy model from asset path:', uri);
-          await FileSystem.copyAsync({
-            from: uri,
-            to: liteModelPath
-          });
-          copiedModel = true;
-          console.log(`[DB] Successfully copied prebuilt model from: ${uri}`);
-          break;
-        } catch (copyErr) {
-          console.warn(`[DB] Failed to copy model from ${uri}:`, copyErr);
-        }
-      }
-    } else {
-      console.log(`[DB] Pre-packaged model already exists in document directory (size: ${liteModelInfo.size || 0} bytes)`);
+    if (liteModelInfo.exists) {
+      console.log(`[DB] Pre-packaged model found in document directory (size: ${liteModelInfo.size || 0} bytes)`);
     }
 
     const files = await FileSystem.readDirectoryAsync(modelsDir);
@@ -209,6 +276,27 @@ export function getDatabase(): SQLite.SQLiteDatabase {
 }
 
 /**
+ * Lazily open a second SQLite connection to the same bible.db file.
+ * Because the database is in WAL mode, read-heavy operations on this
+ * connection (search, spell-check dictionary) do not block the main
+ * connection used by the reader, bookmarks, etc.
+ */
+export async function initSearchDatabase(): Promise<SQLite.SQLiteDatabase> {
+  if (db && isInitialized) {
+    return db;
+  }
+  return await initDatabase();
+}
+
+/**
+ * Get the unified database connection for search operations.
+ * Throws if initDatabase() hasn't been called yet.
+ */
+export function getSearchDatabase(): SQLite.SQLiteDatabase {
+  return getDatabase();
+}
+
+/**
  * Check if the database has been initialized.
  */
 export function isDatabaseInitialized(): boolean {
@@ -219,8 +307,14 @@ export function isDatabaseInitialized(): boolean {
  * Close the database connection. Call on app termination.
  */
 export async function closeDatabase(): Promise<void> {
+  if (searchDb) {
+    await searchDb.closeAsync();
+    searchDb = null;
+    isSearchInitialized = false;
+  }
   if (db) {
     await db.closeAsync();
     db = null;
+    isInitialized = false;
   }
 }

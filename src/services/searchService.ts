@@ -1,6 +1,8 @@
-import { getDatabase } from './database';
+import { initSearchDatabase } from './database';
 import { rrfMerge } from '../utils/rrfMerge';
 import { BOOK_NAMES } from '../utils/constants';
+import { getBookName } from '../utils/bookTranslations';
+import { cleanVerseText } from '../utils/bibleUtils';
 import type { SearchResult } from '../types/bible';
 
 /**
@@ -64,18 +66,20 @@ export async function searchFTS(
   query: string,
   versionId: string,
   limit: number = 20,
-  isRag: boolean = false
+  isRag: boolean = false,
+  offset: number = 0
 ): Promise<SearchResult[]> {
-  const db = getDatabase();
+  const normVersion = (versionId || 'kjv').toLowerCase().trim();
+  const db = await initSearchDatabase();
 
   // Clean query for FTS MATCH syntax
   const cleanQuery = query.replace(/['\"*]/g, '').trim();
   if (!cleanQuery) return [];
 
-  // Split query into keywords
+  // Split query into keywords (support unicode characters for multi-language & original texts)
   let words = cleanQuery
     .split(/\s+/)
-    .map(w => w.replace(/[^a-zA-Z0-9]/g, '').toLowerCase())
+    .map(w => w.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()\[\]<>?@+]/g, '').toLowerCase())
     .filter(w => w.length > 0);
 
   if (words.length === 0) return [];
@@ -99,10 +103,10 @@ export async function searchFTS(
       `SELECT v.id, v.version_id, v.book_number, v.chapter, v.verse_number, v.text, f.rank
        FROM verses_fts f
        JOIN verses v ON v.id = f.rowid
-       WHERE f.verses_fts MATCH ? AND v.version_id = ? AND v.book_number <= 66
+       WHERE f.verses_fts MATCH ? AND LOWER(v.version_id) = ? AND v.book_number <= 66
        ORDER BY f.rank
-       LIMIT ?`,
-      [ftsQuery, versionId, Number(limit)]
+       LIMIT ? OFFSET ?`,
+      [ftsQuery, normVersion, Number(limit), Number(offset)]
     );
 
     // Fallback to OR for RAG
@@ -118,10 +122,10 @@ export async function searchFTS(
         `SELECT v.id, v.version_id, v.book_number, v.chapter, v.verse_number, v.text, f.rank
          FROM verses_fts f
          JOIN verses v ON v.id = f.rowid
-         WHERE f.verses_fts MATCH ? AND v.version_id = ? AND v.book_number <= 66
+         WHERE f.verses_fts MATCH ? AND LOWER(v.version_id) = ? AND v.book_number <= 66
          ORDER BY f.rank
-         LIMIT ?`,
-        [ftsQuery, versionId, Number(limit)]
+         LIMIT ? OFFSET ?`,
+        [ftsQuery, normVersion, Number(limit), Number(offset)]
       );
     }
   } else {
@@ -133,10 +137,10 @@ export async function searchFTS(
         `SELECT v.id, v.version_id, v.book_number, v.chapter, v.verse_number, v.text, f.rank
          FROM verses_fts f
          JOIN verses v ON v.id = f.rowid
-         WHERE f.verses_fts MATCH ? AND v.version_id = ? AND v.book_number <= 66
+         WHERE f.verses_fts MATCH ? AND LOWER(v.version_id) = ? AND v.book_number <= 66
          ORDER BY f.rank
-         LIMIT ?`,
-        [`"${cleanQuery}"`, versionId, Number(limit)]
+         LIMIT ? OFFSET ?`,
+        [`"${cleanQuery}"`, normVersion, Number(limit), Number(offset)]
       );
     }
 
@@ -147,10 +151,10 @@ export async function searchFTS(
         `SELECT v.id, v.version_id, v.book_number, v.chapter, v.verse_number, v.text, f.rank
          FROM verses_fts f
          JOIN verses v ON v.id = f.rowid
-         WHERE f.verses_fts MATCH ? AND v.version_id = ? AND v.book_number <= 66
+         WHERE f.verses_fts MATCH ? AND LOWER(v.version_id) = ? AND v.book_number <= 66
          ORDER BY f.rank
-         LIMIT ?`,
-        [andQuery, versionId, Number(limit)]
+         LIMIT ? OFFSET ?`,
+        [andQuery, normVersion, Number(limit), Number(offset)]
       );
 
       const existingIds = new Set(rows.map(r => r.id));
@@ -168,10 +172,10 @@ export async function searchFTS(
         `SELECT v.id, v.version_id, v.book_number, v.chapter, v.verse_number, v.text, f.rank
          FROM verses_fts f
          JOIN verses v ON v.id = f.rowid
-         WHERE f.verses_fts MATCH ? AND v.version_id = ? AND v.book_number <= 66
+         WHERE f.verses_fts MATCH ? AND LOWER(v.version_id) = ? AND v.book_number <= 66
          ORDER BY f.rank
-         LIMIT ?`,
-        [orQuery, versionId, Number(limit)]
+         LIMIT ? OFFSET ?`,
+        [orQuery, normVersion, Number(limit), Number(offset)]
       );
 
       const existingIds = new Set(rows.map(r => r.id));
@@ -184,8 +188,7 @@ export async function searchFTS(
   }
 
   return rows.map((r: any) => {
-    // Strip inline Strong's number tags (e.g. <S>2532</S>) from verse text
-    const cleanText = r.text.replace(/<S>\d+<\/S>/g, '').replace(/\s{2,}/g, ' ').trim();
+    const cleanText = cleanVerseText(r.text);
     return {
       verse: {
         id: r.id,
@@ -195,7 +198,7 @@ export async function searchFTS(
         verseNumber: r.verse_number,
         text: cleanText,
       },
-      bookName: BOOK_NAMES[r.book_number] || `Book ${r.book_number}`,
+      bookName: getBookName(r.book_number, normVersion) || BOOK_NAMES[r.book_number] || `Book ${r.book_number}`,
       score: Math.abs(r.rank || 0),
       snippet: cleanText.substring(0, 150),
       source: 'fts' as const,
@@ -213,43 +216,47 @@ export async function hybridSearch(
   versionId: string,
   topK: number = 10
 ): Promise<SearchResult[]> {
+  const normVersion = (versionId || 'kjv').toLowerCase().trim();
   // Step 1: FTS5 results
-  const ftsResults = await searchFTS(query, versionId, 20, true);
+  const ftsResults = await searchFTS(query, normVersion, 20, true);
 
   // Step 2: Vector similarity results (sqlite-vec)
   let vectorResults: SearchResult[] = [];
   if (queryEmbedding && queryEmbedding.length > 0) {
     try {
-      const db = getDatabase();
+      const db = await initSearchDatabase();
       const vectorRows = await db.getAllAsync<any>(
         `SELECT v.id, v.version_id, v.book_number, v.chapter, v.verse_number, v.text,
                 ve.distance
          FROM verse_embeddings ve
-         JOIN verses v ON v.version_id = ve.version_id
+         JOIN verses v ON LOWER(v.version_id) = LOWER(ve.version_id)
            AND v.book_number = ve.book_number
            AND v.chapter = ve.chapter
            AND v.verse_number = ve.verse_number
-         WHERE ve.version_id = ?
+         WHERE LOWER(ve.version_id) = ?
            AND ve.embedding MATCH ?
          ORDER BY ve.distance
          LIMIT 20`,
-        [versionId, JSON.stringify(queryEmbedding)]
+        [normVersion, JSON.stringify(queryEmbedding)]
       );
 
-      vectorResults = vectorRows.map((r: any) => ({
-        verse: {
-          id: r.id,
-          versionId: r.version_id,
-          bookNumber: r.book_number,
-          chapter: r.chapter,
-          verseNumber: r.verse_number,
-          text: r.text,
-        },
-        bookName: BOOK_NAMES[r.book_number] || `Book ${r.book_number}`,
-        score: 1 - r.distance, // Convert distance to similarity
-        snippet: r.text.substring(0, 100),
-        source: 'vector' as const,
-      }));
+      vectorResults = vectorRows.map((r: any) => {
+        const cleanText = cleanVerseText(r.text);
+        return {
+          verse: {
+            id: r.id,
+            versionId: r.version_id,
+            bookNumber: r.book_number,
+            chapter: r.chapter,
+            verseNumber: r.verse_number,
+            text: cleanText,
+          },
+          bookName: getBookName(r.book_number, normVersion) || BOOK_NAMES[r.book_number] || `Book ${r.book_number}`,
+          score: 1 - r.distance, // Convert distance to similarity
+          snippet: cleanText.substring(0, 100),
+          source: 'vector' as const,
+        };
+      });
     } catch (e) {
       // Gracefully catch cases where sqlite-vec/verse_embeddings is not yet initialized
       console.warn('[Search] Vector search failed or table not available. Falling back to FTS only.', e);

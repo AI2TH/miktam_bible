@@ -62,3 +62,8 @@ query_verses.js
 parse_xml.js
 check_concordance_counts.js
 .idea/
+*.apk
+*.aab
+build-output/
+cache_vref.txt
+.kimchi/
