@@ -15,12 +15,14 @@ import { getBookName } from '../../src/utils/bookTranslations';
 import { Ionicons } from '@expo/vector-icons';
 import { isDatabaseInitialized } from '../../src/services/database';
 import { loadVerseOfTheDay } from '../../src/services/verseOfTheDayService';
+import { useSettingsStore } from '../../src/stores/settingsStore';
 
 export default function HomeScreen() {
-  const { colors, spacing, borderRadius } = useTheme();
+  const { colors, spacing, borderRadius, isDark } = useTheme();
   const navigation = useNavigation();
   const { currentBookNumber, currentChapter, currentVersionId, navigateTo } = useReaderStore();
-  
+  const { setThemeMode } = useSettingsStore();
+
   const [streak, setStreak] = useState(0);
   const [stats, setStats] = useState({ totalChaptersRead: 0, totalReadingTimeSecs: 0, chaptersReadThisWeek: 0 });
   const [votd, setVotd] = useState({ ref: 'John 3:16', text: 'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.', book: 43, chapter: 3, verse: 16 });
@@ -86,17 +88,55 @@ export default function HomeScreen() {
       <ScrollView contentContainerStyle={[styles.container, { padding: spacing.base }]} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={[styles.header, { marginBottom: spacing.lg }]}>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text variant="h1" style={styles.title}>
               Miktam Bible
             </Text>
-            <Text variant="bodySmall" color="textSecondary">
+            <Text variant="bodySmall" color="textSecondary" style={{ marginTop: 2 }}>
               Your offline study companion
             </Text>
           </View>
-          <View style={[styles.streakContainer, { backgroundColor: colors.surface, borderRadius: borderRadius.full, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs }]}>
-            <Text style={styles.flame}>🔥</Text>
-            <Text variant="bodySmall" style={{ fontWeight: 'bold' }}>{streak}</Text>
+
+          <View style={styles.headerRightActions}>
+            {/* Toggle between Dark 🌙 and Light ☀️ */}
+            <TouchableOpacity
+              onPress={() => setThemeMode(isDark ? 'light' : 'dark')}
+              style={[
+                styles.themeToggleBtn,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                  borderRadius: borderRadius.full,
+                },
+              ]}
+              activeOpacity={0.7}
+              accessibilityLabel={`Switch to ${isDark ? 'light' : 'dark'} mode`}
+            >
+              <Ionicons
+                name={isDark ? 'moon' : 'sunny'}
+                size={18}
+                color={isDark ? '#F7C844' : '#E5A93C'}
+              />
+            </TouchableOpacity>
+
+            {/* Streak Flame Badge */}
+            <View
+              style={[
+                styles.streakContainer,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                  borderRadius: borderRadius.full,
+                  paddingHorizontal: spacing.sm,
+                  paddingVertical: spacing.xs,
+                },
+              ]}
+            >
+              <Text style={styles.flame}>🔥</Text>
+              <Text variant="bodySmall" style={{ fontWeight: 'bold' }}>
+                {streak}
+              </Text>
+            </View>
           </View>
         </View>
 
@@ -169,13 +209,13 @@ export default function HomeScreen() {
 
 
           <TouchableOpacity
-            onPress={() => router.push('/(tabs)/profile')}
+            onPress={() => router.push('/(tabs)/plans' as any)}
             style={[styles.gridItem, { backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md }]}
           >
             <View style={[styles.iconCircle, { backgroundColor: colors.primaryMuted }]}>
-              <Ionicons name="settings-outline" color={colors.primary} size={24} />
+              <Ionicons name="ribbon-outline" color={colors.primary} size={24} />
             </View>
-            <Text variant="bodySmall" style={styles.gridText}>Settings</Text>
+            <Text variant="bodySmall" style={styles.gridText}>Reading Plans</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -226,11 +266,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
+    fontSize: 26,
     fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  headerRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  themeToggleBtn: {
+    width: 36,
+    height: 36,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   streakContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    borderWidth: 1,
   },
   flame: {
     fontSize: 16,
