@@ -228,6 +228,64 @@ export const CREATE_TABLES_SQL = [
     created_at      TEXT DEFAULT (datetime('now'))
   )`,
 
+  `CREATE TABLE IF NOT EXISTS calendar_todos (
+    id              TEXT PRIMARY KEY,
+    date            TEXT NOT NULL,
+    title           TEXT NOT NULL,
+    is_completed    INTEGER DEFAULT 0,
+    created_at      TEXT DEFAULT (datetime('now'))
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_calendar_todos_date
+    ON calendar_todos(date)`,
+
+  `CREATE TABLE IF NOT EXISTS calendar_events (
+    id              TEXT PRIMARY KEY,
+    date            TEXT NOT NULL,
+    title           TEXT NOT NULL,
+    event_time      TEXT,
+    location        TEXT,
+    notes           TEXT,
+    reminder_enabled INTEGER DEFAULT 0,
+    created_at      TEXT DEFAULT (datetime('now'))
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_calendar_events_date
+    ON calendar_events(date)`,
+
+  `CREATE TABLE IF NOT EXISTS reading_plans (
+    id              TEXT PRIMARY KEY,
+    plan_type       TEXT NOT NULL,
+    title           TEXT NOT NULL,
+    duration_days   INTEGER NOT NULL,
+    start_date      TEXT NOT NULL,
+    is_active       INTEGER DEFAULT 1,
+    reminder_time   TEXT DEFAULT '08:00',
+    reminder_enabled INTEGER DEFAULT 1,
+    current_day     INTEGER DEFAULT 1,
+    created_at      TEXT DEFAULT (datetime('now'))
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS reading_plan_days (
+    id              TEXT PRIMARY KEY,
+    plan_id         TEXT NOT NULL,
+    day_number      INTEGER NOT NULL,
+    book_number     INTEGER NOT NULL,
+    start_chapter   INTEGER NOT NULL,
+    end_chapter     INTEGER NOT NULL,
+    scheduled_date  TEXT,
+    reading_label   TEXT,
+    is_completed    INTEGER DEFAULT 0,
+    completed_at    TEXT,
+    UNIQUE(plan_id, day_number)
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_reading_plan_days
+    ON reading_plan_days(plan_id, day_number)`,
+
+  `CREATE INDEX IF NOT EXISTS idx_reading_plan_days_date
+    ON reading_plan_days(scheduled_date)`,
+
   `CREATE TABLE IF NOT EXISTS reading_progress (
     id              TEXT PRIMARY KEY,
     version_id      TEXT NOT NULL,

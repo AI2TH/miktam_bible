@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, StyleSheet, TextInput, ScrollView, TouchableOpacity, Switch } from 'react-native';
+import { View, StyleSheet, TextInput, ScrollView, TouchableOpacity, Switch, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useTheme } from '../../../../src/theme';
@@ -25,7 +25,7 @@ import { useReaderStore, CHAPTERS_PER_BOOK } from '../../../../src/stores/reader
 import { markChapterAsRead } from '../../../../src/services/readingProgressService';
 import { BOOK_NAMES } from '../../../../src/utils/constants';
 import { getBookName } from '../../../../src/utils/bookTranslations';
-import { getVersionAbbreviation } from '../../../../src/utils/bibleUtils';
+import { getVersionAbbreviation, formatMultiVerseRef, cleanVerseText } from '../../../../src/utils/bibleUtils';
 import { getAllVersions } from '../../../../src/services/bibleService';
 import type { BibleVersion } from '../../../../src/types/bible';
 import type { Bookmark } from '../../../../src/types/user';
@@ -76,6 +76,8 @@ export default function ChapterReaderScreen() {
   type StudySheetMode = 'none' | 'actions' | 'concordance' | 'strongs' | 'cross_refs' | 'parallel';
   const [studySheetMode, setStudySheetMode] = useState<StudySheetMode>('none');
   const [selectedVerse, setSelectedVerse] = useState<number | null>(null);
+  const [selectedVerses, setSelectedVerses] = useState<number[]>([]);
+  const [highlightSheetVisible, setHighlightSheetVisible] = useState(false);
   
   // Note state
   const [noteContent, setNoteContent] = useState('');
@@ -106,18 +108,73 @@ export default function ChapterReaderScreen() {
     );
   }, [bookmarks, currentBookNumber, currentChapter, currentVersionId]);
 
-  // Handle actions
+  // Handle multi-verse selection on tap
   const handleVerseTap = (verseNumber: number) => {
-    setSelectedVerse(selectedVerse === verseNumber ? null : verseNumber);
+    setSelectedVerses((prev) => {
+      let next: number[];
+      if (prev.includes(verseNumber)) {
+        next = prev.filter((v) => v !== verseNumber);
+      } else {
+        next = [...prev, verseNumber].sort((a, b) => a - b);
+      }
+      setSelectedVerse(next.length > 0 ? next[0] : null);
+      return next;
+    });
   };
 
   const handleVerseLongPress = async (verseNumber: number) => {
+    setSelectedVerses((prev) => {
+      if (prev.includes(verseNumber)) return prev;
+      return [...prev, verseNumber].sort((a, b) => a - b);
+    });
     setSelectedVerse(verseNumber);
     setStudySheetMode('actions');
 
     // Fetch existing note for this verse
     const existingNote = await getNote(currentVersionId, currentBookNumber, currentChapter, verseNumber);
     setNoteContent(existingNote ? existingNote.content : '');
+  };
+
+  const handleShareSelected = async () => {
+    if (selectedVerses.length === 0) return;
+    const bookName = getBookName(currentBookNumber, currentVersionId);
+    const refStr = formatMultiVerseRef(bookName, currentChapter, selectedVerses);
+    const versionAbbr = getVersionAbbreviation(currentVersionId);
+
+    const verseTexts = selectedVerses.map((vNum) => {
+      const vObj = verses.find((v) => v.verseNumber === vNum);
+      const text = vObj ? cleanVerseText(vObj.text) : '';
+      return `${vNum} ${text}`;
+    });
+
+    const fullMessage = `"${verseTexts.join('\n\n')}"\n\n— ${refStr} (${versionAbbr})\nShared via Miktam Bible`;
+
+    try {
+      await Share.share({
+        message: fullMessage,
+        title: refStr,
+      });
+    } catch (e) {
+      console.error('[Share] Error sharing verses:', e);
+    }
+  };
+
+  const handleApplyHighlightToAll = async (color: string) => {
+    if (selectedVerses.length === 0) return;
+    try {
+      for (const vNum of selectedVerses) {
+        await addBookmark(currentVersionId, currentBookNumber, currentChapter, vNum, color);
+      }
+      refetchBookmarks();
+      setHighlightSheetVisible(false);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleClearSelection = () => {
+    setSelectedVerses([]);
+    setSelectedVerse(null);
   };
 
   const handleApplyHighlight = async (color: string) => {
@@ -270,6 +327,7 @@ export default function ChapterReaderScreen() {
         verses={verses}
         bookmarks={chapterBookmarks}
         selectedVerseNumber={selectedVerse}
+        selectedVerseNumbers={selectedVerses}
         onVerseTap={handleVerseTap}
         onVerseLongPress={handleVerseLongPress}
         fontSize={fontSize}
@@ -305,6 +363,91 @@ export default function ChapterReaderScreen() {
           }
         }}
       />
+
+      {/* Floating Multi-Verse Selection Action Bar */}
+      {selectedVerses.length > 0 && (
+        <View
+          style={[
+            styles.floatingActionBar,
+            {
+              backgroundColor: colors.surfaceElevated,
+              borderColor: colors.primary,
+              borderRadius: borderRadius.lg,
+            },
+          ]}
+        >
+          <View style={styles.floatingRefInfo}>
+            <Text variant="bodySmall" color="primary" style={{ fontWeight: 'bold' }}>
+              {formatMultiVerseRef(getBookName(currentBookNumber, currentVersionId), currentChapter, selectedVerses)}
+            </Text>
+            <Text variant="caption" color="textSecondary">
+              {selectedVerses.length} {selectedVerses.length === 1 ? 'verse' : 'verses'} selected • {getVersionAbbreviation(currentVersionId)}
+            </Text>
+          </View>
+
+          <View style={styles.floatingButtonsRow}>
+            {/* Share Button */}
+            <TouchableOpacity
+              onPress={handleShareSelected}
+              style={[styles.floatingActionBtn, { backgroundColor: colors.primary }]}
+            >
+              <Ionicons name="share-social" size={16} color={colors.textInverse} />
+              <Text variant="caption" color="inverse" style={{ fontWeight: 'bold' }}>
+                Share
+              </Text>
+            </TouchableOpacity>
+
+            {/* Highlight Button */}
+            <TouchableOpacity
+              onPress={() => setHighlightSheetVisible(true)}
+              style={[
+                styles.floatingActionBtn,
+                { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
+              ]}
+            >
+              <Ionicons name="color-palette-outline" size={16} color={colors.primary} />
+            </TouchableOpacity>
+
+            {/* Study Button (available when 1 verse selected) */}
+            {selectedVerses.length === 1 && (
+              <TouchableOpacity
+                onPress={() => setStudySheetMode('actions')}
+                style={[
+                  styles.floatingActionBtn,
+                  { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
+                ]}
+              >
+                <Ionicons name="book-outline" size={16} color={colors.primary} />
+              </TouchableOpacity>
+            )}
+
+            {/* Close / Deselect */}
+            <TouchableOpacity
+              onPress={handleClearSelection}
+              style={[styles.floatingCloseBtn, { backgroundColor: colors.surface }]}
+            >
+              <Ionicons name="close" size={18} color={colors.textTertiary} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Multi-verse Highlight Picker Sheet */}
+      <BottomSheet
+        visible={highlightSheetVisible}
+        onClose={() => setHighlightSheetVisible(false)}
+        title={`Highlight ${selectedVerses.length} Verses`}
+      >
+        <View style={{ paddingVertical: spacing.md, gap: spacing.md }}>
+          <Text variant="bodySmall" color="textSecondary">
+            Choose a highlight color for all {selectedVerses.length} selected verses:
+          </Text>
+          <HighlightColorPicker
+            selectedColor=""
+            onSelectColor={handleApplyHighlightToAll}
+          />
+        </View>
+      </BottomSheet>
 
       {/* Unified Study BottomSheet */}
       <BottomSheet
@@ -732,5 +875,46 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 1,
     borderRadius: 4,
+  },
+  floatingActionBar: {
+    position: 'absolute',
+    bottom: 24,
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderWidth: 1.5,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+  },
+  floatingRefInfo: {
+    flex: 1,
+    marginRight: 8,
+  },
+  floatingButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  floatingActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  floatingCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

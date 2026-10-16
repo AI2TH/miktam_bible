@@ -3,7 +3,7 @@ import { Stack } from 'expo-router';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { LogBox } from 'react-native';
+import { LogBox, View, Image, StyleSheet, ActivityIndicator, Text } from 'react-native';
 import { initDatabase } from '../src/services/database';
 import { initSafeStorage } from '../src/utils/storage';
 import { useSettingsStore } from '../src/stores/settingsStore';
@@ -51,7 +51,21 @@ export default function RootLayout() {
   }, [fontsLoaded, fontError, dbInitialized]);
 
   if ((!fontsLoaded && !fontError) || !dbInitialized) {
-    return null;
+    return (
+      <View style={splashStyles.container}>
+        <StatusBar style="light" />
+        <View style={splashStyles.content}>
+          <Image
+            source={require('../assets/splash-icon.png')}
+            style={splashStyles.logo}
+            resizeMode="contain"
+          />
+          <Text style={splashStyles.title}>MIKTAM BIBLE</Text>
+          <Text style={splashStyles.subtitle}>Scripture • Study • Concordance</Text>
+          <ActivityIndicator size="small" color="#C9A55C" style={splashStyles.spinner} />
+        </View>
+      </View>
+    );
   }
 
   return (
@@ -68,3 +82,38 @@ export default function RootLayout() {
     </>
   );
 }
+
+const splashStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#0F0F14',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  content: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  logo: {
+    width: 160,
+    height: 160,
+    marginBottom: 20,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#C9A55C',
+    letterSpacing: 2,
+    marginBottom: 6,
+  },
+  subtitle: {
+    fontSize: 13,
+    color: '#8A8A9E',
+    letterSpacing: 1,
+    marginBottom: 28,
+  },
+  spinner: {
+    marginTop: 8,
+  },
+});
