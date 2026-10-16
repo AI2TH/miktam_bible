@@ -15,6 +15,13 @@
   </a>
 </p>
 
+> [!TIP]
+> ### 🚀 Early Access on Google Play for AI2TH Group Members
+> All members of the **[AI2TH Google Group](https://groups.google.com/g/ai2th)** automatically receive **Early Access** on Google Play!  
+> Once you are a member of this group with your Google account, you can install and update Miktam Bible directly from the **[Play Store](https://play.google.com/store/apps/details?id=miktam.bible)**.  
+> If your Google Play account differs from your group email, you can also submit the **[Early Access Request Form](https://forms.gle/jdLxXPVhDYm5ubpQ7)** to be added directly.
+
+
 <p align="center">
   <a href="#features">Features</a> •
   <a href="#screenshots">Screenshots</a> •
