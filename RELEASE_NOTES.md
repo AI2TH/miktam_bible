@@ -2,6 +2,28 @@
 
 ---
 
+### 📲 Google Play Early Access Instructions
+To get Early Access to Miktam Bible on Google Play, testers only need to do **ONE** of the following:
+
+#### 🥇 Option 1: Join the Google Group (Recommended & Instant)
+👉 **https://groups.google.com/g/ai2th**
+- **How it works**:
+  1. Click **Join Group** with the same Google account used on your Android device.
+  2. Open the opt-in link: **https://play.google.com/apps/testing/miktam.bible**
+  3. Click **"Become a tester"** and download directly from Google Play (**https://play.google.com/store/apps/details?id=miktam.bible**).
+- **Why it's best**: 100% automated & instant. No manual approval required.
+
+#### 📝 Option 2: Fill out the Form (Backup / Alternate Email)
+👉 **https://forms.gle/jdLxXPVhDYm5ubpQ7**
+- **When to use**:
+  - If you prefer not to join Google Groups.
+  - If your Google Play account email is different from your Google Group email.
+- **How it works**:
+  - Submit your Google Play email in the form.
+  - The admin will enroll your email directly into the Google Play Console testing track.
+
+---
+
 ## [v1.1.8] — 2026-10-16
 ### Brand Identity, Tab Consistency & Footer Deadzone Fix
 - **Brand Medallion Logo Everywhere**:
