@@ -9,7 +9,8 @@ import type { Bookmark } from '../../types/user';
 interface ChapterViewProps {
   verses: Verse[];
   bookmarks: Bookmark[];
-  selectedVerseNumber: number | null;
+  selectedVerseNumber?: number | null;
+  selectedVerseNumbers?: number[];
   onVerseTap: (verseNumber: number) => void;
   onVerseLongPress: (verseNumber: number) => void;
   fontSize: number;
@@ -26,6 +27,7 @@ export function ChapterView({
   verses,
   bookmarks,
   selectedVerseNumber,
+  selectedVerseNumbers,
   onVerseTap,
   onVerseLongPress,
   fontSize,
@@ -118,7 +120,9 @@ export function ChapterView({
       }
       renderItem={({ item }) => {
         const highlightColor = bookmarkMap.get(item.verseNumber);
-        const isSelected = selectedVerseNumber === item.verseNumber;
+        const isSelected = selectedVerseNumbers
+          ? selectedVerseNumbers.includes(item.verseNumber)
+          : selectedVerseNumber === item.verseNumber;
         const secVerse = secondaryVerseMap?.get(item.verseNumber) || null;
 
         return (

@@ -157,3 +157,37 @@ export function getVersionAbbreviation(versionId?: string | null): string {
 
   return versionId.toUpperCase();
 }
+
+/**
+ * Formats multiple verse numbers into a clean reference string.
+ * Examples:
+ *   [16] -> "John 3:16"
+ *   [16, 17, 18] -> "John 3:16-18"
+ *   [16, 18, 19] -> "John 3:16, 18-19"
+ */
+export function formatMultiVerseRef(
+  bookName: string,
+  chapter: number,
+  verseNumbers: number[]
+): string {
+  if (verseNumbers.length === 0) return `${bookName} ${chapter}`;
+  const sorted = [...verseNumbers].sort((a, b) => a - b);
+
+  const ranges: string[] = [];
+  let start = sorted[0];
+  let prev = sorted[0];
+
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] === prev + 1) {
+      prev = sorted[i];
+    } else {
+      ranges.push(start === prev ? `${start}` : `${start}-${prev}`);
+      start = sorted[i];
+      prev = sorted[i];
+    }
+  }
+  ranges.push(start === prev ? `${start}` : `${start}-${prev}`);
+
+  return `${bookName} ${chapter}:${ranges.join(', ')}`;
+}
+

@@ -17,10 +17,37 @@ import { BottomSheet } from '../../src/components/ui/BottomSheet';
 import { Card } from '../../src/components/ui/Card';
 import { Button } from '../../src/components/ui/Button';
 import { Text } from '../../src/components/ui/Text';
-import { startOfMonth, endOfMonth, format } from 'date-fns';
+import { startOfMonth, endOfMonth, format, parseISO } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useNavigation } from 'expo-router';
 import { isDatabaseInitialized } from '../../src/services/database';
+import { DailyTodoList } from '../../src/components/calendar/DailyTodoList';
+import { ChurchMeetingPlanner } from '../../src/components/calendar/ChurchMeetingPlanner';
+import { ReadingPlanSection } from '../../src/components/calendar/ReadingPlanSection';
+import {
+  getTodosForDate,
+  addTodo,
+  toggleTodo,
+  deleteTodo,
+  getEventsForDate,
+  addEvent,
+  deleteEvent,
+  getCalendarBadgeDates,
+  CalendarTodo,
+  CalendarEvent,
+} from '../../src/services/calendarPlannerService';
+import {
+  getActiveReadingPlan,
+  getTodayReading,
+  getReadingForDate,
+  startReadingPlan,
+  completeDayReading,
+  cancelReadingPlan,
+  updatePlanReminder,
+  PlanType,
+  ReadingPlan,
+  ReadingPlanDay,
+} from '../../src/services/readingPlanService';
 
 const CHAPTERS_PER_BOOK: Record<number, number> = {
   1: 50, 2: 40, 3: 27, 4: 36, 5: 34, 6: 24, 7: 21, 8: 4, 9: 31, 10: 24,
@@ -57,8 +84,57 @@ export default function CalendarScreen() {
   const [customVerse, setCustomVerse] = useState<string>('16');
   const [savingCustom, setSavingCustom] = useState(false);
 
+  // Planner & Reading Plan State
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  const [todos, setTodos] = useState<CalendarTodo[]>([]);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [todoDates, setTodoDates] = useState<string[]>([]);
+  const [eventDates, setEventDates] = useState<string[]>([]);
+  const [readingPlan, setReadingPlan] = useState<ReadingPlan | null>(null);
+  const [todayReading, setTodayReading] = useState<ReadingPlanDay | null>(null);
+  const [dateReading, setDateReading] = useState<ReadingPlanDay | null>(null);
+
   const currentYear = format(new Date(), 'yyyy');
   const currentMonthStr = format(new Date(), 'yyyy-MM');
+
+  const loadPlannerData = async (targetDate: string) => {
+    try {
+      if (!isDatabaseInitialized()) return;
+      const dayTodos = await getTodosForDate(targetDate);
+      setTodos(dayTodos);
+      const dayEvents = await getEventsForDate(targetDate);
+      setEvents(dayEvents);
+
+      const dReading = await getReadingForDate(targetDate);
+      setDateReading(dReading);
+
+      const today = new Date();
+      const start = format(startOfMonth(today), 'yyyy-MM-dd');
+      const end = format(endOfMonth(today), 'yyyy-MM-dd');
+      const badgeDates = await getCalendarBadgeDates(start, end);
+      setTodoDates(badgeDates.todoDates);
+      setEventDates(badgeDates.eventDates);
+    } catch (e) {
+      console.error('[Calendar] Failed to load planner data:', e);
+    }
+  };
+
+  const loadPlanData = async () => {
+    try {
+      if (!isDatabaseInitialized()) return;
+      const plan = await getActiveReadingPlan();
+      setReadingPlan(plan);
+      if (plan) {
+        const reading = await getTodayReading(plan.id);
+        setTodayReading(reading);
+      } else {
+        setTodayReading(null);
+      }
+    } catch (e) {
+      console.error('[Calendar] Failed to load reading plan data:', e);
+    }
+  };
 
   const loadProgressAndPromises = async (active: boolean = true) => {
     try {
@@ -93,6 +169,12 @@ export default function CalendarScreen() {
 
       const mthPromise = await getPromiseVerse('monthly', currentMonthStr, currentVersionId);
       if (active) setMonthlyPromise(mthPromise);
+
+      // Load Planner & Plan data
+      if (active) {
+        await loadPlannerData(selectedDate);
+        await loadPlanData();
+      }
     } catch (e) {
       console.error('[Calendar] Failed to load progress or promise data:', e);
     } finally {
@@ -111,6 +193,90 @@ export default function CalendarScreen() {
       unsubscribe();
     };
   }, [currentVersionId, navigation]);
+
+  useEffect(() => {
+    loadPlannerData(selectedDate);
+  }, [selectedDate]);
+
+  const handleAddTodo = async (title: string) => {
+    await addTodo(selectedDate, title);
+    loadPlannerData(selectedDate);
+  };
+
+  const handleToggleTodo = async (id: string, completed: boolean) => {
+    await toggleTodo(id, completed);
+    loadPlannerData(selectedDate);
+  };
+
+  const handleDeleteTodo = async (id: string) => {
+    await deleteTodo(id);
+    loadPlannerData(selectedDate);
+  };
+
+  const handleAddEvent = async (event: Omit<CalendarEvent, 'id' | 'createdAt'>) => {
+    await addEvent(event);
+    loadPlannerData(selectedDate);
+  };
+
+  const handleDeleteEvent = async (id: string) => {
+    await deleteEvent(id);
+    loadPlannerData(selectedDate);
+  };
+
+  const handleStartPlan = async (
+    type: PlanType,
+    remTime: string,
+    remEnabled: boolean,
+    customConfig?: any
+  ) => {
+    const newPlan = await startReadingPlan(type, remTime, remEnabled, customConfig);
+    setReadingPlan(newPlan);
+    loadPlanData();
+    loadPlannerData(selectedDate);
+    Alert.alert('Reading Plan Started', `Your ${newPlan.title} has begun! Daily reading has been set on your calendar.`);
+  };
+
+  const handleCompletePlanDay = async (dayNumber: number) => {
+    if (!readingPlan) return;
+    await completeDayReading(readingPlan.id, dayNumber);
+    loadPlanData();
+    loadPlannerData(selectedDate);
+    Alert.alert('Congratulations! 🎉', "Today's Bible reading marked as complete! Keep it up.");
+  };
+
+  const handleCancelPlan = () => {
+    if (!readingPlan) return;
+    Alert.alert(
+      'Switch / Cancel Reading Plan',
+      'Are you sure you want to stop your current reading plan?',
+      [
+        { text: 'Keep Plan', style: 'cancel' },
+        {
+          text: 'Stop Plan',
+          style: 'destructive',
+          onPress: async () => {
+            await cancelReadingPlan(readingPlan.id);
+            setReadingPlan(null);
+            setTodayReading(null);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleUpdatePlanReminder = async (enabled: boolean, timeStr: string) => {
+    if (!readingPlan) return;
+    await updatePlanReminder(readingPlan.id, enabled, timeStr);
+    loadPlanData();
+  };
+
+  const handleNavigateToReading = (bookNum: number, chapNum: number) => {
+    navigateTo(bookNum, chapNum);
+    router.push({
+      pathname: '/(tabs)/read/[book]/[chapter]',
+      params: { book: bookNum.toString(), chapter: chapNum.toString() },
+    });
+  };
 
   const handleOpenSelector = (type: 'monthly' | 'yearly') => {
     setSelectorType(type);
@@ -240,6 +406,17 @@ export default function CalendarScreen() {
         {/* Streak Flame Badge */}
         <StreakBadge streakCount={streak} />
 
+        {/* ─── BIBLE READING PLAN (1 Year / 6 Months / 3 Months / 2 Months) ─── */}
+        <ReadingPlanSection
+          plan={readingPlan}
+          todayReading={todayReading}
+          onStartPlan={handleStartPlan}
+          onCompleteDay={handleCompletePlanDay}
+          onCancelPlan={handleCancelPlan}
+          onUpdateReminder={handleUpdatePlanReminder}
+          onNavigateToReading={handleNavigateToReading}
+        />
+
         {/* ─── PROMISE VERSES SECTION (Gold Premium Aesthetic) ─── */}
         <View style={styles.sectionHeader}>
           <Ionicons name="sparkles" size={18} color={colors.primary} />
@@ -344,10 +521,119 @@ export default function CalendarScreen() {
         <View style={styles.sectionHeader}>
           <Ionicons name="calendar-outline" size={18} color={colors.primary} />
           <Text variant="h2" style={styles.sectionTitle}>
-            Daily Attendance
+            Daily Attendance & Planner
           </Text>
         </View>
-        <CalendarGrid readDates={readDates} />
+
+        <CalendarGrid
+          readDates={readDates}
+          selectedDate={selectedDate}
+          onSelectDate={setSelectedDate}
+          todoDates={todoDates}
+          eventDates={eventDates}
+        />
+
+        {/* Selected Day Details: Daily To-Dos & Church Meetings */}
+        <View style={{ gap: spacing.md, marginTop: spacing.xs }}>
+          <View style={styles.selectedDateHeader}>
+            <View style={{ flex: 1 }}>
+              <Text variant="h2" style={{ fontWeight: '700' }}>
+                {format(parseISO(selectedDate), 'EEEE, MMMM d, yyyy')}
+              </Text>
+              <Text variant="caption" color="textSecondary">
+                {selectedDate === todayStr ? 'Today • Daily Schedule & Plans' : 'Selected Day Schedule & Plans'}
+              </Text>
+            </View>
+            {selectedDate !== todayStr && (
+              <TouchableOpacity
+                onPress={() => setSelectedDate(todayStr)}
+                style={[
+                  styles.todayChip,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}
+              >
+                <Text variant="caption" color="primary" style={{ fontWeight: 'bold' }}>
+                  Back to Today
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Scheduled Bible Reading for Selected Date */}
+          {dateReading && (
+            <Card style={styles.dateReadingCard} bordered>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="book" size={17} color={colors.primary} />
+                  <Text variant="caption" color="primary" style={{ fontWeight: 'bold', letterSpacing: 0.5 }}>
+                    SCHEDULED BIBLE READING:
+                  </Text>
+                </View>
+
+                {/* Status Badge: Pending vs Completed */}
+                <View
+                  style={[
+                    styles.statusBadge,
+                    dateReading.isCompleted
+                      ? { backgroundColor: '#4E9F3D20', borderColor: '#4E9F3D' }
+                      : { backgroundColor: '#E5A93C20', borderColor: '#E5A93C' },
+                  ]}
+                >
+                  <Text
+                    variant="caption"
+                    style={{
+                      color: dateReading.isCompleted ? '#4E9F3D' : '#E5A93C',
+                      fontWeight: 'bold',
+                      fontSize: 11,
+                    }}
+                  >
+                    {dateReading.isCompleted ? '✓ Completed' : '⏳ Pending'}
+                  </Text>
+                </View>
+              </View>
+
+              <Text variant="h2" style={{ fontWeight: '700', marginVertical: 4 }}>
+                {dateReading.readingLabel || `${dateReading.bookName} ${dateReading.startChapter === dateReading.endChapter ? dateReading.startChapter : `${dateReading.startChapter} - ${dateReading.endChapter}`}`}
+              </Text>
+
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+                <Button
+                  label="Read Now 📖"
+                  onPress={() => handleNavigateToReading(dateReading.bookNumber, dateReading.startChapter)}
+                  variant="primary"
+                  style={{ flex: 1 }}
+                />
+                {!dateReading.isCompleted && (
+                  <Button
+                    label="Mark Done ✓"
+                    onPress={() => handleCompletePlanDay(dateReading.dayNumber)}
+                    variant="outline"
+                    style={{ flex: 1 }}
+                  />
+                )}
+              </View>
+            </Card>
+          )}
+
+          {/* Daily To-Do List */}
+          <DailyTodoList
+            date={selectedDate}
+            formattedDate={format(parseISO(selectedDate), 'MMMM d')}
+            todos={todos}
+            onAddTodo={handleAddTodo}
+            onToggleTodo={handleToggleTodo}
+            onDeleteTodo={handleDeleteTodo}
+          />
+
+          {/* Church Meeting Planner */}
+          <ChurchMeetingPlanner
+            date={selectedDate}
+            formattedDate={format(parseISO(selectedDate), 'MMMM d')}
+            events={events}
+            onAddEvent={handleAddEvent}
+            onDeleteEvent={handleDeleteEvent}
+          />
+        </View>
 
         {/* Statistics Panels */}
         <View style={styles.sectionHeader}>
@@ -627,6 +913,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     fontSize: 16,
     textAlign: 'center',
+  },
+  selectedDateHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  todayChip: {
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+  },
+  dateReadingCard: {
+    padding: 16,
+  },
+  statusBadge: {
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
   },
 });
 
