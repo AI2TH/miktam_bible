@@ -58,14 +58,26 @@ export default function ChapterReaderScreen() {
   
   // Update state store with current position
   useEffect(() => {
-    navigateTo(bookNumber, chapterNumber);
+    if (bookNumber !== currentBookNumber || chapterNumber !== currentChapter) {
+      navigateTo(bookNumber, chapterNumber);
+    }
     // Mark progress
-    markChapterAsRead(currentVersionId, bookNumber, chapterNumber, 10).catch(() => {});
-  }, [bookNumber, chapterNumber, navigateTo, currentVersionId]);
+    markChapterAsRead(currentVersionId, currentBookNumber, currentChapter, 10).catch(() => {});
+  }, [bookNumber, chapterNumber, currentBookNumber, currentChapter, navigateTo, currentVersionId]);
+
+  // Synchronize URL route when store auto-navigates (e.g. NT-only translations)
+  useEffect(() => {
+    if (currentBookNumber !== bookNumber || currentChapter !== chapterNumber) {
+      router.replace({
+        pathname: '/(tabs)/read/[book]/[chapter]',
+        params: { book: currentBookNumber.toString(), chapter: currentChapter.toString() },
+      });
+    }
+  }, [currentBookNumber, currentChapter, bookNumber, chapterNumber]);
 
   // Hook layers
   const { verses, secondaryVerseMap, loading } = useBibleReader();
-  const { add: addBookmark, remove: removeBookmark, bookmarks, refetch: refetchBookmarks } = useBookmarks();
+  const { add: addBookmark, remove: removeBookmark, removeByVerse: removeBookmarkByVerse, bookmarks, refetch: refetchBookmarks } = useBookmarks();
   const { getNote, save: saveNote, remove: removeNote } = useNotes();
   const { originalWords, loadOriginalWords } = useConcordance();
   const { refs: crossRefs, loadRefs } = useCrossReferences();
@@ -101,12 +113,12 @@ export default function ChapterReaderScreen() {
     loadVersions();
   }, [currentVersionId]);
 
-  // Filter bookmarks for current chapter
+  // Filter bookmarks for current chapter (per verse, across all translations)
   const chapterBookmarks = React.useMemo(() => {
     return bookmarks.filter(
-      (b: Bookmark) => b.bookNumber === currentBookNumber && b.chapter === currentChapter && b.versionId === currentVersionId
+      (b: Bookmark) => b.bookNumber === currentBookNumber && b.chapter === currentChapter
     );
-  }, [bookmarks, currentBookNumber, currentChapter, currentVersionId]);
+  }, [bookmarks, currentBookNumber, currentChapter]);
 
   // Handle multi-verse selection on tap
   const handleVerseTap = (verseNumber: number) => {
@@ -167,6 +179,8 @@ export default function ChapterReaderScreen() {
       }
       refetchBookmarks();
       setHighlightSheetVisible(false);
+      setSelectedVerses([]);
+      setSelectedVerse(null);
     } catch (e) {
       console.error(e);
     }
@@ -183,6 +197,8 @@ export default function ChapterReaderScreen() {
       await addBookmark(currentVersionId, currentBookNumber, currentChapter, selectedVerse, color);
       refetchBookmarks();
       setStudySheetMode('none');
+      setSelectedVerses([]);
+      setSelectedVerse(null);
     } catch (e) {
       console.error(e);
     }
@@ -190,12 +206,15 @@ export default function ChapterReaderScreen() {
 
   const handleRemoveHighlight = async () => {
     if (selectedVerse === null) return;
-    const existing = chapterBookmarks.find((b: Bookmark) => b.verseNumber === selectedVerse);
-    if (existing) {
-      await removeBookmark(existing.id);
+    try {
+      await removeBookmarkByVerse(currentBookNumber, currentChapter, selectedVerse);
       refetchBookmarks();
+    } catch (e) {
+      console.error(e);
     }
     setStudySheetMode('none');
+    setSelectedVerses([]);
+    setSelectedVerse(null);
   };
 
   const handleSaveNote = async () => {
@@ -554,6 +573,15 @@ export default function ChapterReaderScreen() {
                 onPress={handleSaveNote}
                 variant="primary"
                 style={{ marginTop: spacing.sm }}
+              />
+              <Button
+                label="View All Study Notes →"
+                onPress={() => {
+                  setStudySheetMode('none');
+                  router.push('/studies' as any);
+                }}
+                variant="ghost"
+                style={{ marginTop: spacing.xs }}
               />
             </View>
           </>

@@ -524,7 +524,7 @@ export default function CalendarScreen() {
                 style={[styles.planLinkChip, { backgroundColor: colors.surfaceElevated, borderColor: colors.border, borderWidth: 1 }]}
               >
                 <Text variant="caption" color="primary" style={{ fontWeight: 'bold' }}>
-                  Manage Plans →
+                  Manage Planner →
                 </Text>
               </TouchableOpacity>
             </View>
@@ -540,7 +540,7 @@ export default function CalendarScreen() {
                   </Text>
                 </View>
                 <Text variant="caption" color="textSecondary">
-                  1-Year, 6-Month, CSB 90-Day, Navigators, or Custom Generator
+                  1-Year, 6-Month, CSB 90-Day, Navigators, or Custom Planner Generator
                 </Text>
               </View>
               <TouchableOpacity
@@ -548,7 +548,7 @@ export default function CalendarScreen() {
                 style={[styles.planLinkChip, { backgroundColor: colors.primary }]}
               >
                 <Text variant="caption" color="inverse" style={{ fontWeight: 'bold' }}>
-                  Choose Plan →
+                  Open Planner →
                 </Text>
               </TouchableOpacity>
             </View>
@@ -563,7 +563,7 @@ export default function CalendarScreen() {
                 {format(parseISO(selectedDate), 'EEEE, MMMM d, yyyy')}
               </Text>
               <Text variant="caption" color="textSecondary">
-                {selectedDate === todayStr ? 'Today • Daily Schedule & Plans' : 'Selected Day Schedule & Plans'}
+                {selectedDate === todayStr ? 'Today • Daily Schedule & Planner' : 'Selected Day Schedule & Planner'}
               </Text>
             </View>
             {selectedDate !== todayStr && (

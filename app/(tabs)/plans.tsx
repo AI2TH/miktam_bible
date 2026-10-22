@@ -129,7 +129,7 @@ export default function PlansScreen() {
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={[styles.container, { backgroundColor: colors.background }]}>
-      <Header title="Reading Plans" />
+      <Header title="Bible Reading Planner" />
       <ScrollView
         contentContainerStyle={[styles.content, { padding: spacing.base, gap: spacing.lg, paddingBottom: spacing['2xl'] }]}
         showsVerticalScrollIndicator={false}
