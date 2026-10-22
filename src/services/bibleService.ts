@@ -12,7 +12,7 @@ export async function getAllVersions(): Promise<BibleVersion[]> {
     id: r.id,
     name: r.name,
     language: r.language,
-    isDownloaded: r.is_downloaded === 1,
+    isDownloaded: r.is_downloaded === 1 || r.id.toLowerCase() === 'kjv',
     downloadDate: r.download_date,
     totalSizeMb: r.total_size_mb,
   }));
@@ -22,7 +22,7 @@ export async function getAllVersions(): Promise<BibleVersion[]> {
 export async function getDownloadedVersions(): Promise<BibleVersion[]> {
   const db = getDatabase();
   const rows = await db.getAllAsync<any>(
-    'SELECT * FROM bible_versions WHERE is_downloaded = 1 ORDER BY name'
+    'SELECT * FROM bible_versions WHERE is_downloaded = 1 OR LOWER(id) = "kjv" ORDER BY CASE WHEN LOWER(id) = "kjv" THEN 0 ELSE 1 END, name ASC'
   );
   return rows.map(r => ({
     id: r.id,

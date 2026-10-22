@@ -1,15 +1,15 @@
 /**
  * Global Bible Catalog for Miktam Bible
  * 
- * Shows ONLY and EXACTLY what is hosted and verified in AI2TH database repositories:
+ * Shows ONLY and EXACTLY what is hosted, verified, and populated with real Scripture in AI2TH database repositories:
  * - AI2TH/bible_db
  * - AI2TH/bible_db_languages_a_f
  * - AI2TH/bible_db_languages_g_m
  * - AI2TH/bible_db_languages_n_s
  * - AI2TH/bible_db_languages_t_z
  * 
- * Total Languages: 2538
- * Total Versions: 5639
+ * Total Languages: 1,279
+ * Total Versions: 2,633
  */
 
 import {

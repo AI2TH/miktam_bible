@@ -36,7 +36,18 @@ export function useBibleReader() {
           })
         : Promise.resolve([] as Verse[]);
 
-      const [data, secData] = await Promise.all([primaryPromise, secondaryPromise]);
+      let [data, secData] = await Promise.all([primaryPromise, secondaryPromise]);
+
+      if (data.length === 0 && reqVersion !== 'kjv') {
+        const { getBooks } = await import('../services/bibleService');
+        const availableBooks = await getBooks(reqVersion);
+        if (availableBooks.length > 0 && !availableBooks.some(b => b.bookNumber === reqBook)) {
+          const firstBook = availableBooks[0];
+          console.log(`[useBibleReader] Book ${reqBook} not in ${reqVersion}. Auto-navigating to ${firstBook.name} (${firstBook.bookNumber}):1`);
+          useReaderStore.getState().navigateTo(firstBook.bookNumber, 1);
+          return;
+        }
+      }
 
       const latest = useReaderStore.getState();
       if (

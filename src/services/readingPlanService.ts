@@ -43,7 +43,7 @@ export const READING_PLAN_DEFINITIONS: Record<PlanType, PlanDefinition> = {
   },
   'csb_90': {
     type: 'csb_90',
-    title: 'CSB 90-Day Bible Plan',
+    title: 'CSB 90-Day Bible Planner',
     durationDays: 90,
     description: 'Read the complete Bible cover-to-cover in 90 intense, focused days.',
     scope: 'Complete Bible (66 Books)',
@@ -51,7 +51,7 @@ export const READING_PLAN_DEFINITIONS: Record<PlanType, PlanDefinition> = {
   },
   'navigators_4track': {
     type: 'navigators_4track',
-    title: 'Navigators Discipleship Plan',
+    title: 'Navigators Discipleship Planner',
     durationDays: 365,
     description: '4 daily readings: Gospels, Law/History, Psalms/Wisdom, and Epistles for rich daily variety.',
     scope: 'Whole Bible in 4 Daily Tracks',
@@ -75,7 +75,7 @@ export const READING_PLAN_DEFINITIONS: Record<PlanType, PlanDefinition> = {
   },
   'custom': {
     type: 'custom',
-    title: 'Custom Reading Plan',
+    title: 'Custom Reading Planner Generator',
     durationDays: 30,
     description: 'Personalized Bible reading plan tailored to your chosen duration and scope.',
     scope: 'Customizable Scope',

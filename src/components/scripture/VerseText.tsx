@@ -103,11 +103,12 @@ export function VerseText({
             style={[
               styles.secondaryBlock,
               {
-                backgroundColor: colors.surfaceMuted + '80',
+                backgroundColor: colors.surface,
                 borderColor: colors.border,
+                borderLeftColor: colors.primary,
                 borderRadius: borderRadius.sm,
-                paddingHorizontal: spacing.sm,
-                paddingVertical: spacing.xs + 3,
+                paddingHorizontal: spacing.sm + 2,
+                paddingVertical: spacing.sm,
                 marginTop: spacing.xs + 4,
               },
             ]}
@@ -117,17 +118,19 @@ export function VerseText({
                 style={[
                   styles.badgePill,
                   {
-                    backgroundColor: colors.primary + '20',
+                    backgroundColor: colors.primary + '25',
+                    borderColor: colors.primary + '60',
+                    borderWidth: 1,
                     borderRadius: borderRadius.sm,
-                    paddingHorizontal: 5,
-                    paddingVertical: 1,
+                    paddingHorizontal: 6,
+                    paddingVertical: 2,
                   },
                 ]}
               >
                 <Text
                   variant="caption"
                   color="primary"
-                  style={{ fontSize: 10, fontWeight: 'bold' }}
+                  style={{ fontSize: 11, fontWeight: '700', letterSpacing: 0.5 }}
                 >
                   {secondaryVersionAbbr.toUpperCase()}
                 </Text>
@@ -135,13 +138,15 @@ export function VerseText({
             </View>
             <Text
               variant="scripture"
-              color={secondaryVerse ? 'textSecondary' : 'textTertiary'}
+              color={secondaryVerse ? 'textPrimary' : 'textTertiary'}
               style={[
                 styles.secondaryText,
                 {
                   fontSize: secFontSize,
                   lineHeight: secLineHeight,
+                  color: secondaryVerse ? colors.textPrimary : colors.textTertiary,
                   fontStyle: secondaryVerse ? 'normal' : 'italic',
+                  opacity: secondaryVerse ? 0.96 : 0.7,
                   ...(secFontFamily ? { fontFamily: secFontFamily } : {}),
                 },
               ]}
@@ -166,7 +171,8 @@ const styles = StyleSheet.create({
     // Standard text wraps perfectly on its own
   },
   secondaryBlock: {
-    borderLeftWidth: 2,
+    borderLeftWidth: 3,
+    borderWidth: 1,
   },
   secondaryHeader: {
     flexDirection: 'row',

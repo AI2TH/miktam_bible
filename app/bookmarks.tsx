@@ -10,10 +10,11 @@ import { useReaderStore } from '../src/stores/readerStore';
 import { getBookName } from '../src/utils/bookTranslations';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { Text } from '../src/components/ui/Text';
 
 export default function BookmarksScreen() {
-  const { colors, spacing } = useTheme();
-  const { bookmarks, remove, refetch, loading } = useBookmarks();
+  const { colors, spacing, borderRadius } = useTheme();
+  const { bookmarks, remove, removeByVerse, refetch, loading } = useBookmarks();
   const { navigateTo, currentVersionId } = useReaderStore();
 
   useEffect(() => {
@@ -28,14 +29,15 @@ export default function BookmarksScreen() {
     });
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = (item: any) => {
     Alert.alert('Remove Highlight', 'Are you sure you want to delete this highlight?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
-          await remove(id);
+          if (item.id) await remove(item.id);
+          await removeByVerse(item.bookNumber, item.chapter, item.verseNumber);
         },
       },
     ]);
@@ -44,6 +46,29 @@ export default function BookmarksScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <Header title="Bookmarks & Highlights" showBack={true} />
+
+      {/* Switcher Tab between Highlights and Studies */}
+      <View style={[styles.tabBar, { paddingHorizontal: spacing.base, marginBottom: spacing.sm }]}>
+        <View style={[styles.tabContainer, { backgroundColor: colors.surface, borderRadius: borderRadius.md, borderColor: colors.border, borderWidth: 1 }]}>
+          <TouchableOpacity
+            style={[styles.tabBtn, { backgroundColor: colors.primary, borderRadius: borderRadius.md }]}
+          >
+            <Ionicons name="star" size={15} color={colors.textInverse} style={{ marginRight: 6 }} />
+            <Text variant="button" color="inverse" style={{ fontWeight: '700' }}>
+              Highlights ({bookmarks.length})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.replace('/studies' as any)}
+            style={[styles.tabBtn, { borderRadius: borderRadius.md }]}
+          >
+            <Ionicons name="journal-outline" size={15} color={colors.textSecondary} style={{ marginRight: 6 }} />
+            <Text variant="button" color="textSecondary">
+              Study Notes
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
 
       {bookmarks.length === 0 ? (
         <EmptyState
@@ -60,7 +85,7 @@ export default function BookmarksScreen() {
             <View style={styles.cardWrapper}>
               <View style={{ flex: 1 }}>
                 <VerseCard
-                  bookName={getBookName(item.bookNumber, item.versionId)}
+                  bookName={getBookName(item.bookNumber, currentVersionId || item.versionId)}
                   chapter={item.chapter}
                   verseNumber={item.verseNumber}
                   text={item.text}
@@ -69,7 +94,7 @@ export default function BookmarksScreen() {
                 />
               </View>
               <TouchableOpacity
-                onPress={() => handleDelete(item.id)}
+                onPress={() => handleDelete(item)}
                 style={[styles.deleteBtn, { backgroundColor: colors.surfaceElevated }]}
               >
                 <Ionicons name="trash-outline" size={18} color={colors.error} />
@@ -85,6 +110,20 @@ export default function BookmarksScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  tabBar: {
+    width: '100%',
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    padding: 3,
+  },
+  tabBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
   },
   cardWrapper: {
     flexDirection: 'row',

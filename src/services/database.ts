@@ -187,29 +187,35 @@ async function populateGlobalBibleCatalog(database: SQLite.SQLiteDatabase): Prom
     const versionCountRow = await database.getFirstAsync<{ count: number }>(
       'SELECT COUNT(*) as count FROM bible_versions'
     );
-    if (versionCountRow && versionCountRow.count >= 5600) {
-      return; // Already populated with complete multi-repo catalog
+    if (versionCountRow && versionCountRow.count >= 2600) {
+      // Ensure KJV is always marked downloaded
+      await database.runAsync("UPDATE bible_versions SET is_downloaded = 1 WHERE LOWER(id) = 'kjv'");
+      return; // Already populated with verified catalog
     }
 
-    console.log(`[DB] Seeding global Bible catalog: ${GLOBAL_LANGUAGES.length} languages & ${GLOBAL_BIBLE_VERSIONS.length} versions...`);
+    console.log(`[DB] Seeding global Bible catalog: ${GLOBAL_LANGUAGES.length} languages & ${GLOBAL_BIBLE_VERSIONS.length} verified versions...`);
     await database.withTransactionAsync(async () => {
       // 1. Seed languages
       for (const lang of GLOBAL_LANGUAGES) {
         await database.runAsync(
-          'INSERT OR IGNORE INTO bible_languages (code, name, local_name, version_count) VALUES (?, ?, ?, ?)',
+          'INSERT OR REPLACE INTO bible_languages (code, name, local_name, version_count) VALUES (?, ?, ?, ?)',
           [lang.code, lang.name, lang.localName, lang.versionCount]
         );
       }
 
       // 2. Seed all translations
       for (const v of GLOBAL_BIBLE_VERSIONS) {
+        const isKjv = v.id.toLowerCase() === 'kjv';
         await database.runAsync(
           'INSERT OR IGNORE INTO bible_versions (id, name, language, is_downloaded, total_size_mb) VALUES (?, ?, ?, ?, ?)',
-          [v.id, v.name, v.language, 0, 25.0]
+          [v.id, v.name, v.language, isKjv ? 1 : 0, isKjv ? 32.0 : 25.0]
         );
       }
+
+      // Ensure KJV is marked downloaded
+      await database.runAsync("UPDATE bible_versions SET is_downloaded = 1 WHERE LOWER(id) = 'kjv'");
     });
-    console.log('[DB] Successfully seeded all world languages and translations into SQLite!');
+    console.log('[DB] Successfully seeded all verified world languages and translations into SQLite!');
   } catch (seedErr) {
     console.warn('[DB] Failed to seed global Bible catalog:', seedErr);
   }

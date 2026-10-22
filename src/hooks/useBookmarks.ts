@@ -55,6 +55,20 @@ export function useBookmarks() {
     }
   }, [fetchBookmarks]);
 
+  const removeByVerse = useCallback(async (
+    bookNumber: number,
+    chapter: number,
+    verseNumber: number
+  ) => {
+    try {
+      await bookmarkService.removeHighlightByVerse(bookNumber, chapter, verseNumber);
+      await fetchBookmarks();
+    } catch (e) {
+      console.error('[useBookmarks] Failed to remove bookmark by verse:', e);
+      throw e;
+    }
+  }, [fetchBookmarks]);
+
   const checkIsBookmarked = useCallback(async (
     versionId: string,
     bookNumber: number,
@@ -78,6 +92,7 @@ export function useBookmarks() {
     loading,
     add,
     remove,
+    removeByVerse,
     checkIsBookmarked,
     refetch: fetchBookmarks,
   };

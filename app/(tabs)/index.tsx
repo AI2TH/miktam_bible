@@ -164,17 +164,17 @@ export default function HomeScreen() {
             <View style={[styles.iconCircle, { backgroundColor: colors.primaryMuted }]}>
               <Ionicons name="ribbon-outline" color={colors.primary} size={24} />
             </View>
-            <Text variant="bodySmall" style={styles.gridText}>Reading Plans</Text>
+            <Text variant="bodySmall" style={styles.gridText}>Bible Planner</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={() => router.push('/recordings')}
+            onPress={() => router.push('/studies' as any)}
             style={[styles.gridItem, { backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md }]}
           >
             <View style={[styles.iconCircle, { backgroundColor: colors.primaryMuted }]}>
-              <Ionicons name="mic-outline" color={colors.primary} size={24} />
+              <Ionicons name="journal-outline" color={colors.primary} size={24} />
             </View>
-            <Text variant="bodySmall" style={styles.gridText}>Voice Notes</Text>
+            <Text variant="bodySmall" style={styles.gridText}>Study Notes</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -185,6 +185,26 @@ export default function HomeScreen() {
               <Ionicons name="star-outline" color={colors.primary} size={24} />
             </View>
             <Text variant="bodySmall" style={styles.gridText}>Highlights</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => router.push('/concordance/search')}
+            style={[styles.gridItem, { backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md }]}
+          >
+            <View style={[styles.iconCircle, { backgroundColor: colors.primaryMuted }]}>
+              <Ionicons name="search-circle-outline" color={colors.primary} size={24} />
+            </View>
+            <Text variant="bodySmall" style={styles.gridText}>Concordance</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => router.push('/recordings')}
+            style={[styles.gridItem, { backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md }]}
+          >
+            <View style={[styles.iconCircle, { backgroundColor: colors.primaryMuted }]}>
+              <Ionicons name="mic-outline" color={colors.primary} size={24} />
+            </View>
+            <Text variant="bodySmall" style={styles.gridText}>Voice Notes</Text>
           </TouchableOpacity>
 
           <TouchableOpacity

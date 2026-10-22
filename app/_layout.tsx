@@ -78,6 +78,7 @@ export default function RootLayout() {
         <Stack.Screen name="chat" options={{ presentation: 'modal' }} />
         <Stack.Screen name="recordings" options={{ presentation: 'modal' }} />
         <Stack.Screen name="bookmarks" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="studies" options={{ presentation: 'modal' }} />
         <Stack.Screen name="concordance/[strongsNumber]" options={{ presentation: 'card' }} />
         <Stack.Screen name="concordance/search" options={{ presentation: 'card' }} />
       </Stack>

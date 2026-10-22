@@ -69,7 +69,7 @@ export function ReadingPlanSection({
     if (selectedPlanType === 'custom') {
       const parsedDays = parseInt(customDaysStr, 10) || 30;
       customConfig = {
-        title: customTitle.trim() || 'Custom Bible Plan',
+        title: customTitle.trim() || 'Custom Reading Planner',
         durationDays: parsedDays,
         scope: customScope,
       };
@@ -95,13 +95,13 @@ export function ReadingPlanSection({
         <View style={styles.titleRow}>
           <Ionicons name="ribbon-outline" size={20} color={colors.primary} />
           <Text variant="h2" style={{ fontWeight: '700' }}>
-            Bible Reading Plan
+            Bible Reading Planner
           </Text>
         </View>
         {plan && (
           <TouchableOpacity onPress={onCancelPlan}>
             <Text variant="caption" color="textTertiary">
-              Switch Plan
+              Switch Planner
             </Text>
           </TouchableOpacity>
         )}
@@ -111,7 +111,7 @@ export function ReadingPlanSection({
       {!plan ? (
         <Card style={styles.noPlanCard} bordered>
           <Text variant="h3" style={{ fontWeight: '700', marginBottom: 4 }}>
-            Start a Reading Journey
+            Start a Reading Planner Journey
           </Text>
           <Text variant="bodySmall" color="textSecondary" style={{ marginBottom: spacing.md }}>
             Stay disciplined with structured plans (including Navigators & CSB 90-Day) or build a custom plan with daily notifications.
@@ -308,7 +308,7 @@ export function ReadingPlanSection({
             ]}
           >
             <View style={styles.modalHeader}>
-              <Text variant="h2">Configure Reading Plan</Text>
+              <Text variant="h2">Configure Reading Planner</Text>
               <TouchableOpacity onPress={() => setSelectorVisible(false)}>
                 <Ionicons name="close" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
@@ -325,7 +325,7 @@ export function ReadingPlanSection({
             {selectedPlanType === 'custom' && (
               <View style={[styles.customForm, { borderColor: colors.border, backgroundColor: colors.surface + '60' }]}>
                 <Text variant="bodySmall" style={{ fontWeight: 'bold', marginBottom: 4 }}>
-                  Plan Name:
+                  Planner Name:
                 </Text>
                 <TextInput
                   style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}

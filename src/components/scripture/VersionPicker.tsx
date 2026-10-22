@@ -94,13 +94,16 @@ export function VersionPicker({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLanguageCode, setSelectedLanguageCode] = useState<string>('all');
   const [activeDownloads, setActiveDownloads] = useState<Record<string, DownloadProgress>>({});
-  const [downloadedSet, setDownloadedSet] = useState<Set<string>>(
-    () => new Set(versions.filter((v) => v.isDownloaded).map((v) => v.id.toLowerCase()))
-  );
+  const [downloadedSet, setDownloadedSet] = useState<Set<string>>(() => {
+    const s = new Set(versions.filter((v) => v.isDownloaded).map((v) => v.id.toLowerCase()));
+    s.add('kjv'); // KJV is the bundled default
+    return s;
+  });
 
   // Keep downloadedSet in sync with props
   useEffect(() => {
     const nextSet = new Set(downloadedSet);
+    nextSet.add('kjv');
     for (const v of versions) {
       if (v.isDownloaded) {
         nextSet.add(v.id.toLowerCase());
@@ -153,7 +156,7 @@ export function VersionPicker({
     const q = searchQuery.trim().toLowerCase();
     const langFilter = (selectedLanguageCode || 'all').trim().toLowerCase();
 
-    return GLOBAL_BIBLE_VERSIONS.filter((v) => {
+    const list = GLOBAL_BIBLE_VERSIONS.filter((v) => {
       // Offline / Downloaded filter
       if (langFilter === 'downloaded') {
         const isDl = downloadedSet.has(v.id.toLowerCase()) || v.id.toLowerCase() === 'kjv';
@@ -180,6 +183,16 @@ export function VersionPicker({
         v.id.toLowerCase().includes(q)
       );
     });
+
+    if (langFilter === 'downloaded') {
+      return [...list].sort((a, b) => {
+        if (a.id.toLowerCase() === 'kjv') return -1;
+        if (b.id.toLowerCase() === 'kjv') return 1;
+        return a.name.localeCompare(b.name);
+      });
+    }
+
+    return list;
   }, [searchQuery, selectedLanguageCode, downloadedSet]);
 
   // Filtered languages based on search
@@ -253,7 +266,7 @@ export function VersionPicker({
               {isDownloaded ? (
                 <View style={[styles.statusPill, { backgroundColor: '#10B98120' }]}>
                   <Text variant="caption" style={{ color: '#10B981', fontWeight: 'bold' }}>
-                    ✓ Ready Offline
+                    {item.id.toLowerCase() === 'kjv' ? '✓ Bundled Offline' : '✓ Ready Offline'}
                   </Text>
                 </View>
               ) : isDownloading ? (

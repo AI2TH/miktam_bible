@@ -461,9 +461,9 @@ async function downloadViaDatabaseAttach(
       );
       const res = await downloadResumable.downloadAsync();
       if (res && (res.status === 200 || res.status === 0)) {
-        // Verify downloaded file is a valid non-empty SQLite file (>10KB)
+        // Verify downloaded file is a valid non-empty SQLite file (>30KB to exclude 28KB empty skeletons)
         const info = await FileSystem.getInfoAsync(tempFileUri);
-        if (info.exists && 'size' in info && (info.size || 0) > 10240) {
+        if (info.exists && 'size' in info && (info.size || 0) > 30000) {
           downloaded = true;
           downloadedFileName = item.fileName;
           break;
@@ -486,6 +486,15 @@ async function downloadViaDatabaseAttach(
 
   try {
     await db.execAsync(`ATTACH DATABASE '${cleanPath}' AS temp_src;`);
+
+    // Verify source database actually contains verses before importing
+    const srcVerseCheck = await db.getFirstAsync<{ count: number }>(
+      'SELECT COUNT(*) as count FROM temp_src.verses;'
+    ).catch(() => null);
+
+    if (!srcVerseCheck || srcVerseCheck.count === 0) {
+      throw new Error(`The remote translation file for ${normVersion} contains 0 scripture verses.`);
+    }
 
     // Ensure version record exists before inserting books and verses to satisfy foreign keys
     const existingVersion = await db.getFirstAsync<{ id: string; name: string }>(
@@ -701,18 +710,22 @@ export async function downloadBibleVersion(
       if (c && !candidates.includes(c)) candidates.push(c);
     };
 
-    const ai2thMapped = getAi2thDbFileName(normVersion);
-    addCandidate(ai2thMapped);
-    addCandidate(normVersion);
-    addCandidate(normVersion.toLowerCase());
-    addCandidate(normVersion.toUpperCase());
     if (catalogItem) {
-      addCandidate(getAi2thDbFileName(catalogItem.abbreviation.toLowerCase()));
+      addCandidate(catalogItem.id);
+      addCandidate(getAi2thDbFileName(catalogItem.id));
+      addCandidate(getAi2thDbFileName(catalogItem.id.toLowerCase()));
       addCandidate(catalogItem.abbreviation);
-      addCandidate(catalogItem.abbreviation.toLowerCase());
+      addCandidate(getAi2thDbFileName(catalogItem.abbreviation));
+      addCandidate(getAi2thDbFileName(catalogItem.abbreviation.toLowerCase()));
       addCandidate(catalogItem.language);
       addCandidate(catalogItem.language.toLowerCase());
     }
+    const ai2thMapped = getAi2thDbFileName(normVersion);
+    addCandidate(ai2thMapped);
+    addCandidate(versionId);
+    addCandidate(normVersion);
+    addCandidate(normVersion.toLowerCase());
+    addCandidate(normVersion.toUpperCase());
 
     if (candidates.length > 0) {
       try {

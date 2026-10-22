@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useTheme } from '../../theme';
 import { Text } from '../ui/Text';
@@ -14,6 +14,39 @@ export function BookGrid({ onSelectBook }: BookGridProps) {
   const { colors, spacing, borderRadius } = useTheme();
   const [activeTab, setActiveTab] = useState<'OT' | 'NT'>('OT');
   const { currentVersionId } = useReaderStore();
+  const [availableBookNumbers, setAvailableBookNumbers] = useState<Set<number> | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    async function loadAvailable() {
+      if (!currentVersionId || currentVersionId.toLowerCase() === 'kjv') {
+        setAvailableBookNumbers(null);
+        return;
+      }
+      try {
+        const { getBooks } = await import('../../services/bibleService');
+        const books = await getBooks(currentVersionId);
+        if (!active) return;
+        if (books.length > 0) {
+          const s = new Set(books.map((b) => b.bookNumber));
+          setAvailableBookNumbers(s);
+          const hasOt = books.some((b) => b.bookNumber <= 39);
+          const hasNt = books.some((b) => b.bookNumber >= 40);
+          if (!hasOt && hasNt) {
+            setActiveTab('NT');
+          }
+        } else {
+          setAvailableBookNumbers(null);
+        }
+      } catch {
+        if (active) setAvailableBookNumbers(null);
+      }
+    }
+    loadAvailable();
+    return () => {
+      active = false;
+    };
+  }, [currentVersionId]);
 
   const otBooks = Object.keys(BOOK_NAMES)
     .map((numStr) => {
@@ -52,7 +85,7 @@ export function BookGrid({ onSelectBook }: BookGridProps) {
           ]}
         >
           <Text variant="button" color={activeTab === 'OT' ? 'inverse' : 'textSecondary'}>
-            Old Testament (39)
+            Old Testament {availableBookNumbers ? `(${otBooks.filter((b) => availableBookNumbers.has(b.bookNumber)).length})` : '(39)'}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -66,7 +99,7 @@ export function BookGrid({ onSelectBook }: BookGridProps) {
           ]}
         >
           <Text variant="button" color={activeTab === 'NT' ? 'inverse' : 'textSecondary'}>
-            New Testament (27)
+            New Testament {availableBookNumbers ? `(${ntBooks.filter((b) => availableBookNumbers.has(b.bookNumber)).length})` : '(27)'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -75,19 +108,22 @@ export function BookGrid({ onSelectBook }: BookGridProps) {
       <ScrollView contentContainerStyle={styles.gridContainer} showsVerticalScrollIndicator={false}>
         <View style={styles.grid}>
           {activeBooks.map((book) => {
+            const isAvailable = availableBookNumbers === null || availableBookNumbers.has(book.bookNumber);
             const abbr = getBookAbbreviation(book.bookNumber, currentVersionId);
             return (
               <TouchableOpacity
                 key={book.bookNumber}
-                onPress={() => onSelectBook(book.bookNumber)}
+                onPress={() => isAvailable && onSelectBook(book.bookNumber)}
+                disabled={!isAvailable}
                 activeOpacity={0.8}
                 style={[
                   styles.bookItem,
                   {
                     backgroundColor: colors.surface,
-                    borderColor: colors.border,
+                    borderColor: isAvailable ? colors.border : colors.borderMuted,
                     borderRadius: borderRadius.sm,
                     padding: spacing.md,
+                    opacity: isAvailable ? 1 : 0.35,
                   },
                 ]}
               >

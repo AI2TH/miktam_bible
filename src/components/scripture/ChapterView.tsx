@@ -3,6 +3,7 @@ import { FlatList, StyleSheet, View, TouchableOpacity } from 'react-native';
 import { useTheme } from '../../theme';
 import { VerseText } from './VerseText';
 import { Text } from '../ui/Text';
+import { useReaderStore } from '../../stores/readerStore';
 import type { Verse } from '../../types/bible';
 import type { Bookmark } from '../../types/user';
 
@@ -67,9 +68,24 @@ export function ChapterView({
           <Text variant="h3" color="textSecondary" style={{ textAlign: 'center', marginBottom: spacing.sm }}>
             Content Not Available
           </Text>
-          <Text variant="bodySmall" color="textTertiary" style={{ textAlign: 'center' }}>
+          <Text variant="bodySmall" color="textTertiary" style={{ textAlign: 'center', marginBottom: spacing.md }}>
             This book or chapter is not included in the selected Bible translation.
           </Text>
+          <TouchableOpacity
+            onPress={() => useReaderStore.getState().setVersion('kjv')}
+            style={{
+              backgroundColor: colors.surface,
+              borderColor: colors.primary,
+              borderWidth: 1,
+              paddingHorizontal: spacing.base,
+              paddingVertical: spacing.sm,
+              borderRadius: borderRadius.md,
+            }}
+          >
+            <Text variant="button" color="primary">
+              Switch to KJV (Full Bible)
+            </Text>
+          </TouchableOpacity>
         </View>
       }
       ListFooterComponent={
