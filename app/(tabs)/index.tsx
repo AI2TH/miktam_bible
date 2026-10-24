@@ -229,7 +229,7 @@ export default function HomeScreen() {
             Miktam Bible
           </Text>
           <Text variant="caption" color="textTertiary" style={{ marginTop: 2 }}>
-            Your offline study companion • v1.1.9
+            Your offline study companion • v1.2.0
           </Text>
         </View>
       </ScrollView>

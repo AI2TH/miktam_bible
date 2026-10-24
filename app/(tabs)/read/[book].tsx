@@ -22,7 +22,7 @@ const CHAPTERS_PER_BOOK: Record<number, number> = {
 export default function BookChaptersScreen() {
   const { colors, spacing } = useTheme();
   const { book } = useLocalSearchParams<{ book: string }>();
-  const { currentVersionId } = useReaderStore();
+  const { currentVersionId, navigateTo } = useReaderStore();
 
   const parsedBook = parseInt(Array.isArray(book) ? book[0] : (book || '1'));
   const bookNumber = isNaN(parsedBook) ? 1 : Math.max(1, Math.min(66, parsedBook));
@@ -30,6 +30,7 @@ export default function BookChaptersScreen() {
   const totalChapters = CHAPTERS_PER_BOOK[bookNumber] || 1;
 
   const handleSelectChapter = (chapterNumber: number) => {
+    navigateTo(bookNumber, chapterNumber);
     router.push({
       pathname: '/(tabs)/read/[book]/[chapter]',
       params: { book: bookNumber.toString(), chapter: chapterNumber.toString() },

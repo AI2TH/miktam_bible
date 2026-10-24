@@ -58,22 +58,10 @@ export default function ChapterReaderScreen() {
   
   // Update state store with current position
   useEffect(() => {
-    if (bookNumber !== currentBookNumber || chapterNumber !== currentChapter) {
-      navigateTo(bookNumber, chapterNumber);
-    }
+    navigateTo(bookNumber, chapterNumber);
     // Mark progress
-    markChapterAsRead(currentVersionId, currentBookNumber, currentChapter, 10).catch(() => {});
-  }, [bookNumber, chapterNumber, currentBookNumber, currentChapter, navigateTo, currentVersionId]);
-
-  // Synchronize URL route when store auto-navigates (e.g. NT-only translations)
-  useEffect(() => {
-    if (currentBookNumber !== bookNumber || currentChapter !== chapterNumber) {
-      router.replace({
-        pathname: '/(tabs)/read/[book]/[chapter]',
-        params: { book: currentBookNumber.toString(), chapter: currentChapter.toString() },
-      });
-    }
-  }, [currentBookNumber, currentChapter, bookNumber, chapterNumber]);
+    markChapterAsRead(currentVersionId, bookNumber, chapterNumber, 10).catch(() => {});
+  }, [bookNumber, chapterNumber, navigateTo, currentVersionId]);
 
   // Hook layers
   const { verses, secondaryVerseMap, loading } = useBibleReader();
