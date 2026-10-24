@@ -45,6 +45,11 @@ export function useBibleReader() {
           const firstBook = availableBooks[0];
           console.log(`[useBibleReader] Book ${reqBook} not in ${reqVersion}. Auto-navigating to ${firstBook.name} (${firstBook.bookNumber}):1`);
           useReaderStore.getState().navigateTo(firstBook.bookNumber, 1);
+          const { router } = await import('expo-router');
+          router.replace({
+            pathname: '/(tabs)/read/[book]/[chapter]',
+            params: { book: firstBook.bookNumber.toString(), chapter: '1' },
+          });
           return;
         }
       }
