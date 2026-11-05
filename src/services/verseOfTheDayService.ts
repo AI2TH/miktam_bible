@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { format } from 'date-fns';
 import { getVerse } from './bibleService';
 import { getBookName } from '../utils/bookTranslations';
 import { cleanVerseText } from '../utils/bibleUtils';
@@ -224,8 +225,8 @@ async function getUserSeed(): Promise<string> {
 /**
  * Gets or selects today's random verse coordinates for the current user
  */
-export async function getDailyVerseCoordinates(): Promise<{ book: number; chapter: number; verse: number }> {
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+export async function getDailyVerseCoordinates(targetDateStr?: string): Promise<{ book: number; chapter: number; verse: number }> {
+  const today = targetDateStr || format(new Date(), 'yyyy-MM-dd'); // YYYY-MM-DD
 
   try {
     const cachedStr = await AsyncStorage.getItem(DAILY_VOTD_KEY);
@@ -258,9 +259,9 @@ export async function getDailyVerseCoordinates(): Promise<{ book: number; chapte
 /**
  * Loads the Verse of the Day in the requested Bible version
  */
-export async function loadVerseOfTheDay(versionId: string): Promise<VerseOfTheDay> {
+export async function loadVerseOfTheDay(versionId: string, targetDateStr?: string): Promise<VerseOfTheDay> {
   const normVer = (versionId || 'kjv').toLowerCase().trim();
-  const coords = await getDailyVerseCoordinates();
+  const coords = await getDailyVerseCoordinates(targetDateStr);
 
   let verseRow = await getVerse(normVer, coords.book, coords.chapter, coords.verse);
   if (!verseRow && normVer !== 'kjv') {

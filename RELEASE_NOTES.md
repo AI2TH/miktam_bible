@@ -24,6 +24,34 @@ To get Early Access to Miktam Bible on Google Play, testers only need to do **ON
 
 ---
 
+## [v1.2.1] — 2026-11-05
+### Dynamic Planner Notifications, 12 AM Daily VOTD, Custom Timers & Authentic Curriculums
+- **Dynamic Planner Notifications & Completion Tracking**:
+  - Marking today's reading completed now immediately updates notification scheduling so alerts don't persist as 'still pending'.
+  - Notifications dynamically display the current active uncompleted day (e.g. Day 4: Genesis 10–12 instead of static Day 1).
+  - Active plan card displays a celebratory "Today's Reading Completed! 🎉" banner with next day's preview and a "Read Ahead 📖" button.
+- **12:00 AM Verse of the Day (VOTD) Notification**:
+  - Automatically schedules daily 12:00 AM midnight notification across a rolling 14-day window.
+  - Matches the deterministic Verse of the Day displayed on the Home screen for that calendar day.
+  - Dedicated Android notification channel `daily_votd` with high importance.
+- **Custom Notification Time Selector**:
+  - Replaced rigid predefined time pills with a custom time picker (Hour stepper, Minute stepper ±5m, AM/PM toggle, and quick presets).
+  - Users can adjust notification times during plan creation and edit existing plan reminders at any time.
+- **Biblical Curriculums & Full Schedule Explorer**:
+  - Replaced repetitive placeholder schedules with authentic, distinct reading curriculums (Navigators 4-Track 365 Days, CSB 90-Day sprint, 6 Months Whole Bible, 3 Months New Testament, 2 Months New Testament sprint, 1 Year Sequential).
+  - Added "Curriculum Preview" (first 5 days) in the plan creation wizard.
+  - Added "Full Schedule Explorer" modal with Day search and filter tabs (All, Pending, Done).
+
+---
+
+## [v1.2.0] — 2026-10-24
+### Navigation Crash Elimination & Reader Stability
+- **Eliminated Router Loop on Chapter Open**:
+  - Resolved `Maximum update depth exceeded` loop when opening chapters across Old and New Testament books (e.g., John, Acts, Romans).
+  - Synchronized route parameters cleanly with reader store without competing `useEffect` cascades.
+
+---
+
 ## [v1.1.8] — 2026-10-16
 ### Brand Identity, Tab Consistency & Footer Deadzone Fix
 - **Brand Medallion Logo Everywhere**:

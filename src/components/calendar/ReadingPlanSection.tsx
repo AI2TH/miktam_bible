@@ -1,5 +1,14 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, Modal, Switch, TextInput, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  StyleSheet,
+  TouchableOpacity,
+  Modal,
+  Switch,
+  TextInput,
+  ScrollView,
+  FlatList,
+} from 'react-native';
 import { useTheme } from '../../theme';
 import { Text } from '../ui/Text';
 import { Card } from '../ui/Card';
@@ -10,11 +19,14 @@ import {
   PlanType,
   ReadingPlan,
   ReadingPlanDay,
+  getSchedulePreview,
+  getAllPlanDays,
 } from '../../services/readingPlanService';
 
 interface ReadingPlanSectionProps {
   plan: ReadingPlan | null;
   todayReading: ReadingPlanDay | null;
+  nextReading?: ReadingPlanDay | null;
   onStartPlan: (
     type: PlanType,
     reminderTime: string,
@@ -32,8 +44,6 @@ interface ReadingPlanSectionProps {
   onNavigateToReading: (bookNumber: number, chapter: number) => void;
 }
 
-const REMINDER_TIMES = ['06:00', '07:00', '08:00', '09:00', '19:00', '20:00', '21:00'];
-
 const SCOPE_OPTIONS: { id: 'whole' | 'nt' | 'ot' | 'gospels' | 'wisdom'; label: string }[] = [
   { id: 'whole', label: '📖 Complete Bible (66 Books)' },
   { id: 'nt', label: '✝️ New Testament (27 Books)' },
@@ -42,9 +52,207 @@ const SCOPE_OPTIONS: { id: 'whole' | 'nt' | 'ot' | 'gospels' | 'wisdom'; label: 
   { id: 'wisdom', label: '💎 Psalms & Wisdom' },
 ];
 
+/** Convert 24-hour "HH:mm" string to formatted 12-hour AM/PM string */
+function formatTo12Hour(time24: string): string {
+  if (!time24) return '08:00 AM';
+  const [hStr, mStr] = time24.split(':');
+  let h = parseInt(hStr || '8', 10);
+  let m = parseInt(mStr || '0', 10);
+  if (isNaN(h)) h = 8;
+  if (isNaN(m)) m = 0;
+  const period = h >= 12 ? 'PM' : 'AM';
+  const displayH = h % 12 || 12;
+  const displayM = m.toString().padStart(2, '0');
+  return `${displayH}:${displayM} ${period}`;
+}
+
+/**
+ * Custom Time Selector Component
+ * Allows user to set ANY hour and minute (with steppers, AM/PM, and quick presets)
+ */
+function CustomTimeSelector({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (time24: string) => void;
+}) {
+  const { colors, spacing, borderRadius } = useTheme();
+
+  const [hStr, mStr] = (value || '08:00').split(':');
+  let rawH = parseInt(hStr || '8', 10);
+  let rawM = parseInt(mStr || '0', 10);
+  if (isNaN(rawH)) rawH = 8;
+  if (isNaN(rawM)) rawM = 0;
+
+  const isPM = rawH >= 12;
+  const hour12 = rawH % 12 || 12;
+  const minute = rawM;
+
+  const updateTime = (h12: number, m: number, pm: boolean) => {
+    let finalH = h12;
+    if (pm && finalH < 12) finalH += 12;
+    if (!pm && finalH === 12) finalH = 0;
+    const time24 = `${finalH.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+    onChange(time24);
+  };
+
+  const handleHourStep = (delta: number) => {
+    let newH = hour12 + delta;
+    if (newH < 1) newH = 12;
+    if (newH > 12) newH = 1;
+    updateTime(newH, minute, isPM);
+  };
+
+  const handleMinuteStep = (delta: number) => {
+    let newM = minute + delta;
+    if (newM < 0) newM = 55;
+    if (newM >= 60) newM = 0;
+    updateTime(hour12, newM, isPM);
+  };
+
+  const togglePeriod = (targetPM: boolean) => {
+    if (targetPM !== isPM) {
+      updateTime(hour12, minute, targetPM);
+    }
+  };
+
+  const presets = [
+    { label: '06:00 AM', time24: '06:00' },
+    { label: '07:30 AM', time24: '07:30' },
+    { label: '08:00 AM', time24: '08:00' },
+    { label: '12:00 PM', time24: '12:00' },
+    { label: '08:00 PM', time24: '20:00' },
+    { label: '09:30 PM', time24: '21:30' },
+  ];
+
+  return (
+    <View style={styles.timeSelectorWrap}>
+      {/* Visual Clock Stepper Box */}
+      <View
+        style={[
+          styles.timeStepperBox,
+          { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: borderRadius.md },
+        ]}
+      >
+        {/* Hour Control */}
+        <View style={styles.timeUnitCol}>
+          <TouchableOpacity
+            style={[styles.stepperBtn, { backgroundColor: colors.surfaceElevated }]}
+            onPress={() => handleHourStep(1)}
+          >
+            <Ionicons name="chevron-up" size={18} color={colors.primary} />
+          </TouchableOpacity>
+          <Text variant="h1" style={{ fontWeight: '700', minWidth: 44, textAlign: 'center' }}>
+            {hour12.toString().padStart(2, '0')}
+          </Text>
+          <TouchableOpacity
+            style={[styles.stepperBtn, { backgroundColor: colors.surfaceElevated }]}
+            onPress={() => handleHourStep(-1)}
+          >
+            <Ionicons name="chevron-down" size={18} color={colors.primary} />
+          </TouchableOpacity>
+          <Text variant="caption" color="textTertiary" style={{ marginTop: 2, fontSize: 10 }}>
+            HOUR
+          </Text>
+        </View>
+
+        <Text variant="h1" style={{ fontWeight: '700', marginBottom: 14 }}>
+          :
+        </Text>
+
+        {/* Minute Control */}
+        <View style={styles.timeUnitCol}>
+          <TouchableOpacity
+            style={[styles.stepperBtn, { backgroundColor: colors.surfaceElevated }]}
+            onPress={() => handleMinuteStep(5)}
+          >
+            <Ionicons name="chevron-up" size={18} color={colors.primary} />
+          </TouchableOpacity>
+          <Text variant="h1" style={{ fontWeight: '700', minWidth: 44, textAlign: 'center' }}>
+            {minute.toString().padStart(2, '0')}
+          </Text>
+          <TouchableOpacity
+            style={[styles.stepperBtn, { backgroundColor: colors.surfaceElevated }]}
+            onPress={() => handleMinuteStep(-5)}
+          >
+            <Ionicons name="chevron-down" size={18} color={colors.primary} />
+          </TouchableOpacity>
+          <Text variant="caption" color="textTertiary" style={{ marginTop: 2, fontSize: 10 }}>
+            MIN
+          </Text>
+        </View>
+
+        {/* AM / PM Toggle */}
+        <View style={styles.ampmCol}>
+          <TouchableOpacity
+            style={[
+              styles.ampmBtn,
+              !isPM ? { backgroundColor: colors.primary } : { backgroundColor: colors.surfaceElevated },
+            ]}
+            onPress={() => togglePeriod(false)}
+          >
+            <Text
+              variant="caption"
+              style={{ fontWeight: 'bold' }}
+              color={!isPM ? 'inverse' : 'textPrimary'}
+            >
+              AM
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.ampmBtn,
+              isPM ? { backgroundColor: colors.primary } : { backgroundColor: colors.surfaceElevated },
+            ]}
+            onPress={() => togglePeriod(true)}
+          >
+            <Text
+              variant="caption"
+              style={{ fontWeight: 'bold' }}
+              color={isPM ? 'inverse' : 'textPrimary'}
+            >
+              PM
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Quick Select Presets */}
+      <View style={styles.presetChipsRow}>
+        {presets.map((p) => {
+          const isSelected = value === p.time24;
+          return (
+            <TouchableOpacity
+              key={p.time24}
+              onPress={() => onChange(p.time24)}
+              style={[
+                styles.presetChip,
+                {
+                  backgroundColor: isSelected ? colors.primary + '25' : colors.surface,
+                  borderColor: isSelected ? colors.primary : colors.border,
+                },
+              ]}
+            >
+              <Text
+                variant="caption"
+                style={{ fontSize: 11, fontWeight: isSelected ? '700' : '500' }}
+                color={isSelected ? 'primary' : 'textSecondary'}
+              >
+                {p.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 export function ReadingPlanSection({
   plan,
   todayReading,
+  nextReading,
   onStartPlan,
   onCompleteDay,
   onCancelPlan,
@@ -59,10 +267,28 @@ export function ReadingPlanSection({
   const [reminderTime, setReminderTime] = useState('08:00');
   const [reminderEnabled, setReminderEnabled] = useState(true);
 
+  // Edit Time Modal for active plan
+  const [editTimeModalVisible, setEditTimeModalVisible] = useState(false);
+  const [editTimeValue, setEditTimeValue] = useState(plan?.reminderTime || '08:00');
+
+  // Full Schedule Explorer Modal
+  const [scheduleExplorerVisible, setScheduleExplorerVisible] = useState(false);
+  const [allDays, setAllDays] = useState<ReadingPlanDay[]>([]);
+  const [scheduleFilter, setScheduleFilter] = useState<'all' | 'pending' | 'completed'>('all');
+  const [searchDayText, setSearchDayText] = useState('');
+
   // Custom Plan Generator State
   const [customTitle, setCustomTitle] = useState('My Bible Plan');
   const [customDaysStr, setCustomDaysStr] = useState('90');
   const [customScope, setCustomScope] = useState<'whole' | 'nt' | 'ot' | 'gospels' | 'wisdom'>('whole');
+
+  // Load all days when schedule explorer opens
+  const handleOpenScheduleExplorer = async () => {
+    if (!plan) return;
+    const days = await getAllPlanDays(plan.id);
+    setAllDays(days);
+    setScheduleExplorerVisible(true);
+  };
 
   const handleStart = async () => {
     let customConfig;
@@ -78,15 +304,42 @@ export function ReadingPlanSection({
     setSelectorVisible(false);
   };
 
+  const handleSaveActiveReminderTime = async () => {
+    if (!plan) return;
+    await onUpdateReminder(plan.reminderEnabled, editTimeValue);
+    setEditTimeModalVisible(false);
+  };
+
   const planTypes: PlanType[] = [
     '1_year',
-    '6_months',
-    'csb_90',
     'navigators_4track',
+    'csb_90',
+    '6_months',
     '3_months',
     '2_months',
     'custom',
   ];
+
+  // Schedule preview for currently selected plan type in modal
+  const previewSchedule = getSchedulePreview(
+    selectedPlanType,
+    5,
+    selectedPlanType === 'custom' ? parseInt(customDaysStr, 10) || 30 : undefined,
+    selectedPlanType === 'custom' ? customScope : undefined
+  );
+
+  // Filtered days in Schedule Explorer
+  const filteredDays = allDays.filter((d) => {
+    if (scheduleFilter === 'pending' && d.isCompleted) return false;
+    if (scheduleFilter === 'completed' && !d.isCompleted) return false;
+    if (searchDayText.trim()) {
+      const q = searchDayText.trim().toLowerCase();
+      const matchesDay = d.dayNumber.toString().includes(q);
+      const matchesLabel = (d.readingLabel || '').toLowerCase().includes(q);
+      return matchesDay || matchesLabel;
+    }
+    return true;
+  });
 
   return (
     <View style={styles.container}>
@@ -114,7 +367,7 @@ export function ReadingPlanSection({
             Start a Reading Planner Journey
           </Text>
           <Text variant="bodySmall" color="textSecondary" style={{ marginBottom: spacing.md }}>
-            Stay disciplined with structured plans (including Navigators & CSB 90-Day) or build a custom plan with daily notifications.
+            Stay disciplined with structured plans (Navigators 4-Track, CSB 90-Day, 1 Year) or build a custom plan with daily notifications.
           </Text>
 
           <View style={{ gap: spacing.sm }}>
@@ -200,28 +453,47 @@ export function ReadingPlanSection({
             />
           </View>
 
-          {/* Today's Reading Target */}
+          {/* TODAY'S READING SECTION */}
           {todayReading && (
             <View
               style={[
                 styles.todayReadingBox,
                 {
                   backgroundColor: colors.surface,
-                  borderColor: colors.border,
+                  borderColor: todayReading.isCompleted ? '#4E9F3D50' : colors.border,
                   borderRadius: borderRadius.md,
                   padding: spacing.md,
                 },
               ]}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: 6,
+                }}
+              >
                 <View style={styles.todayHeader}>
-                  <Ionicons name="book" size={18} color={colors.primary} />
-                  <Text variant="bodySmall" color="primary" style={{ fontWeight: 'bold' }}>
-                    TODAY'S SCRIPTURE READING:
+                  <Ionicons
+                    name={todayReading.isCompleted ? 'checkmark-circle' : 'book'}
+                    size={18}
+                    color={todayReading.isCompleted ? '#4E9F3D' : colors.primary}
+                  />
+                  <Text
+                    variant="bodySmall"
+                    style={{
+                      fontWeight: 'bold',
+                      color: todayReading.isCompleted ? '#4E9F3D' : colors.primary,
+                    }}
+                  >
+                    {todayReading.isCompleted
+                      ? `DAY ${todayReading.dayNumber}: COMPLETED ✓`
+                      : `TODAY'S READING • DAY ${todayReading.dayNumber}`}
                   </Text>
                 </View>
 
-                {/* Status Badge: Pending vs Completed */}
+                {/* Status Badge */}
                 <View
                   style={[
                     styles.statusBadge,
@@ -244,9 +516,10 @@ export function ReadingPlanSection({
               </View>
 
               <Text variant="h2" style={{ fontWeight: '700', marginVertical: 4 }}>
-                {todayReading.readingLabel || `${todayReading.bookName} ${todayReading.startChapter === todayReading.endChapter ? todayReading.startChapter : `${todayReading.startChapter} - ${todayReading.endChapter}`}`}
+                {todayReading.readingLabel || `${todayReading.bookName} ${todayReading.startChapter}`}
               </Text>
 
+              {/* Actions for Today */}
               <View style={styles.actionRow}>
                 <Button
                   label="Read Now 📖"
@@ -258,7 +531,7 @@ export function ReadingPlanSection({
                 />
 
                 <Button
-                  label={todayReading.isCompleted ? 'Completed ✓' : 'Mark Done ✓'}
+                  label={todayReading.isCompleted ? 'Done ✓' : 'Mark Done ✓'}
                   onPress={() => onCompleteDay(todayReading.dayNumber)}
                   variant={todayReading.isCompleted ? 'secondary' : 'outline'}
                   disabled={todayReading.isCompleted}
@@ -268,18 +541,92 @@ export function ReadingPlanSection({
             </View>
           )}
 
-          {/* Reminder Setting */}
+          {/* If today is completed, show Next Upcoming Reading */}
+          {todayReading?.isCompleted && nextReading && nextReading.dayNumber !== todayReading.dayNumber && (
+            <View
+              style={[
+                styles.nextReadingBox,
+                {
+                  backgroundColor: colors.surfaceElevated,
+                  borderColor: colors.border,
+                  borderRadius: borderRadius.md,
+                  padding: spacing.md,
+                  marginBottom: 12,
+                },
+              ]}
+            >
+              <View style={styles.todayHeader}>
+                <Ionicons name="arrow-forward-circle" size={18} color={colors.primary} />
+                <Text variant="bodySmall" color="primary" style={{ fontWeight: 'bold' }}>
+                  UP NEXT • DAY {nextReading.dayNumber}:
+                </Text>
+              </View>
+
+              <Text variant="h3" style={{ fontWeight: '700', marginVertical: 4 }}>
+                {nextReading.readingLabel}
+              </Text>
+
+              <View style={styles.actionRow}>
+                <Button
+                  label="Read Ahead 📖"
+                  onPress={() =>
+                    onNavigateToReading(nextReading.bookNumber, nextReading.startChapter)
+                  }
+                  variant="primary"
+                  style={{ flex: 1 }}
+                />
+                <Button
+                  label="Mark Done ✓"
+                  onPress={() => onCompleteDay(nextReading.dayNumber)}
+                  variant="outline"
+                  style={{ flex: 1 }}
+                />
+              </View>
+            </View>
+          )}
+
+          {/* Schedule Explorer Button */}
+          <TouchableOpacity
+            style={[
+              styles.explorerBtn,
+              { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+            ]}
+            onPress={handleOpenScheduleExplorer}
+          >
+            <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+            <Text variant="bodySmall" style={{ fontWeight: '600', flex: 1 }} color="textPrimary">
+              View Full Schedule ({plan.durationDays} Days)
+            </Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+          </TouchableOpacity>
+
+          {/* Reminder Setting & Edit Time Button */}
           <View style={[styles.reminderBar, { borderTopColor: colors.border }]}>
-            <View style={styles.reminderInfo}>
+            <TouchableOpacity
+              style={styles.reminderInfo}
+              activeOpacity={0.7}
+              onPress={() => {
+                setEditTimeValue(plan.reminderTime || '08:00');
+                setEditTimeModalVisible(true);
+              }}
+            >
               <Ionicons
                 name={plan.reminderEnabled ? 'notifications' : 'notifications-off-outline'}
-                size={16}
+                size={18}
                 color={plan.reminderEnabled ? colors.primary : colors.textTertiary}
               />
-              <Text variant="caption" color="textSecondary">
-                Daily reminder at {plan.reminderTime} (notifies if pending)
-              </Text>
-            </View>
+              <View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Text variant="caption" color="textPrimary" style={{ fontWeight: '700' }}>
+                    Daily Reminder: {formatTo12Hour(plan.reminderTime)}
+                  </Text>
+                  <Ionicons name="pencil" size={12} color={colors.primary} />
+                </View>
+                <Text variant="caption" color="textTertiary" style={{ fontSize: 10 }}>
+                  Tap to customize notification time
+                </Text>
+              </View>
+            </TouchableOpacity>
             <Switch
               value={plan.reminderEnabled}
               onValueChange={(val) => onUpdateReminder(val, plan.reminderTime)}
@@ -289,7 +636,7 @@ export function ReadingPlanSection({
         </Card>
       )}
 
-      {/* Start Plan Configuration Modal */}
+      {/* MODAL 1: Start Plan Configuration Modal */}
       <Modal
         visible={selectorVisible}
         transparent
@@ -321,14 +668,51 @@ export function ReadingPlanSection({
               {READING_PLAN_DEFINITIONS[selectedPlanType]?.description}
             </Text>
 
+            {/* Curriculum Preview (First 5 Days) */}
+            <View
+              style={[
+                styles.previewContainer,
+                { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+              ]}
+            >
+              <View style={styles.previewHeader}>
+                <Ionicons name="list-outline" size={15} color={colors.primary} />
+                <Text variant="caption" color="primary" style={{ fontWeight: '700' }}>
+                  CURRICULUM PREVIEW (FIRST 5 DAYS):
+                </Text>
+              </View>
+              {previewSchedule.map((p) => (
+                <View key={p.dayNumber} style={styles.previewRow}>
+                  <Text variant="caption" style={{ fontWeight: '700', width: 48 }} color="textSecondary">
+                    Day {p.dayNumber}:
+                  </Text>
+                  <Text variant="caption" color="textPrimary" style={{ flex: 1, fontWeight: '600' }}>
+                    {p.readingLabel}
+                  </Text>
+                </View>
+              ))}
+            </View>
+
             {/* Custom Generator Form */}
             {selectedPlanType === 'custom' && (
-              <View style={[styles.customForm, { borderColor: colors.border, backgroundColor: colors.surface + '60' }]}>
+              <View
+                style={[
+                  styles.customForm,
+                  { borderColor: colors.border, backgroundColor: colors.surface + '60' },
+                ]}
+              >
                 <Text variant="bodySmall" style={{ fontWeight: 'bold', marginBottom: 4 }}>
                   Planner Name:
                 </Text>
                 <TextInput
-                  style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                      color: colors.textPrimary,
+                    },
+                  ]}
                   value={customTitle}
                   onChangeText={setCustomTitle}
                   placeholder="e.g. My 40-Day Gospel Journey"
@@ -339,7 +723,14 @@ export function ReadingPlanSection({
                   Total Duration (Days):
                 </Text>
                 <TextInput
-                  style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                      color: colors.textPrimary,
+                    },
+                  ]}
                   value={customDaysStr}
                   onChangeText={setCustomDaysStr}
                   keyboardType="numeric"
@@ -358,7 +749,8 @@ export function ReadingPlanSection({
                       style={[
                         styles.scopeOption,
                         {
-                          backgroundColor: customScope === sc.id ? colors.primary + '20' : colors.surface,
+                          backgroundColor:
+                            customScope === sc.id ? colors.primary + '20' : colors.surface,
                           borderColor: customScope === sc.id ? colors.primary : colors.border,
                         },
                       ]}
@@ -388,7 +780,7 @@ export function ReadingPlanSection({
                   Daily Scripture Reminder
                 </Text>
                 <Text variant="caption" color="textSecondary">
-                  Sends notification with today's reading status (Pending/Done)
+                  Delivers daily notification with current day's reading
                 </Text>
               </View>
               <Switch
@@ -398,39 +790,13 @@ export function ReadingPlanSection({
               />
             </View>
 
-            {/* Reminder Time Picker */}
+            {/* Custom Notification Time Picker */}
             {reminderEnabled && (
               <View style={{ marginVertical: spacing.sm }}>
-                <Text variant="bodySmall" style={{ fontWeight: 'bold', marginBottom: 8 }}>
-                  Notification Time:
+                <Text variant="bodySmall" style={{ fontWeight: 'bold', marginBottom: 6 }}>
+                  Choose Notification Time:
                 </Text>
-                <View style={styles.timePillsWrap}>
-                  {REMINDER_TIMES.map((timeStr) => {
-                    const isSelected = reminderTime === timeStr;
-                    return (
-                      <TouchableOpacity
-                        key={timeStr}
-                        onPress={() => setReminderTime(timeStr)}
-                        style={[
-                          styles.timePill,
-                          {
-                            backgroundColor: isSelected ? colors.primary : colors.surface,
-                            borderColor: colors.border,
-                            borderRadius: borderRadius.md,
-                          },
-                        ]}
-                      >
-                        <Text
-                          variant="caption"
-                          style={{ fontWeight: 'bold' }}
-                          color={isSelected ? 'inverse' : 'textPrimary'}
-                        >
-                          {timeStr}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
+                <CustomTimeSelector value={reminderTime} onChange={setReminderTime} />
               </View>
             )}
 
@@ -449,6 +815,215 @@ export function ReadingPlanSection({
               />
             </View>
           </ScrollView>
+        </View>
+      </Modal>
+
+      {/* MODAL 2: Change Reminder Time for Active Plan */}
+      <Modal
+        visible={editTimeModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditTimeModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View
+            style={[
+              styles.editTimeModalContent,
+              {
+                backgroundColor: colors.background,
+                borderColor: colors.border,
+                borderRadius: borderRadius.lg,
+              },
+            ]}
+          >
+            <View style={styles.modalHeader}>
+              <Text variant="h3" style={{ fontWeight: '700' }}>
+                Set Notification Time
+              </Text>
+              <TouchableOpacity onPress={() => setEditTimeModalVisible(false)}>
+                <Ionicons name="close" size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text variant="caption" color="textSecondary" style={{ marginVertical: 6 }}>
+              Select the exact time of day when you want your daily Bible reading reminder to fire.
+            </Text>
+
+            <CustomTimeSelector value={editTimeValue} onChange={setEditTimeValue} />
+
+            <View style={styles.modalActions}>
+              <Button
+                label="Cancel"
+                onPress={() => setEditTimeModalVisible(false)}
+                variant="outline"
+                style={{ flex: 1 }}
+              />
+              <Button
+                label="Save Time"
+                onPress={handleSaveActiveReminderTime}
+                variant="primary"
+                style={{ flex: 1 }}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL 3: Full Schedule Explorer */}
+      <Modal
+        visible={scheduleExplorerVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setScheduleExplorerVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View
+            style={[
+              styles.explorerModalContent,
+              {
+                backgroundColor: colors.background,
+                borderColor: colors.border,
+                borderRadius: borderRadius.lg,
+              },
+            ]}
+          >
+            <View style={styles.modalHeader}>
+              <View>
+                <Text variant="h2">{plan?.title || 'Reading Plan'}</Text>
+                <Text variant="caption" color="textSecondary">
+                  Full Schedule • {allDays.length} Days
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setScheduleExplorerVisible(false)}>
+                <Ionicons name="close" size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Filter Tabs & Search */}
+            <View style={styles.filterBar}>
+              <View style={styles.filterTabs}>
+                {(['all', 'pending', 'completed'] as const).map((tab) => {
+                  const isSelected = scheduleFilter === tab;
+                  return (
+                    <TouchableOpacity
+                      key={tab}
+                      onPress={() => setScheduleFilter(tab)}
+                      style={[
+                        styles.filterTabBtn,
+                        isSelected && {
+                          backgroundColor: colors.primary,
+                          borderColor: colors.primary,
+                        },
+                      ]}
+                    >
+                      <Text
+                        variant="caption"
+                        style={{ fontWeight: 'bold' }}
+                        color={isSelected ? 'inverse' : 'textSecondary'}
+                      >
+                        {tab === 'all'
+                          ? `All (${allDays.length})`
+                          : tab === 'pending'
+                          ? `Pending (${allDays.filter((d) => !d.isCompleted).length})`
+                          : `Done (${allDays.filter((d) => d.isCompleted).length})`}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <TextInput
+                style={[
+                  styles.searchDayInput,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                    color: colors.textPrimary,
+                  },
+                ]}
+                value={searchDayText}
+                onChangeText={setSearchDayText}
+                placeholder="Search day or book (e.g. 4, Matthew)..."
+                placeholderTextColor={colors.textTertiary}
+              />
+            </View>
+
+            {/* Schedule List */}
+            <FlatList
+              data={filteredDays}
+              keyExtractor={(item) => item.id}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingVertical: 8, gap: 8 }}
+              renderItem={({ item }) => (
+                <View
+                  style={[
+                    styles.scheduleItemCard,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: item.isCompleted ? '#4E9F3D50' : colors.border,
+                    },
+                  ]}
+                >
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text
+                        variant="caption"
+                        style={{
+                          fontWeight: 'bold',
+                          color: item.isCompleted ? '#4E9F3D' : colors.primary,
+                        }}
+                      >
+                        Day {item.dayNumber}
+                      </Text>
+                      {item.scheduledDate && (
+                        <Text variant="caption" color="textTertiary">
+                          • {item.scheduledDate}
+                        </Text>
+                      )}
+                    </View>
+                    <Text variant="body" style={{ fontWeight: '600', marginTop: 2 }}>
+                      {item.readingLabel}
+                    </Text>
+                  </View>
+
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <TouchableOpacity
+                      style={[styles.smallActionBtn, { backgroundColor: colors.primary + '20' }]}
+                      onPress={() => {
+                        setScheduleExplorerVisible(false);
+                        onNavigateToReading(item.bookNumber, item.startChapter);
+                      }}
+                    >
+                      <Ionicons name="book-outline" size={14} color={colors.primary} />
+                      <Text variant="caption" color="primary" style={{ fontWeight: 'bold' }}>
+                        Read
+                      </Text>
+                    </TouchableOpacity>
+
+                    {!item.isCompleted ? (
+                      <TouchableOpacity
+                        style={[styles.smallActionBtn, { backgroundColor: colors.surfaceElevated }]}
+                        onPress={async () => {
+                          await onCompleteDay(item.dayNumber);
+                          const updated = await getAllPlanDays(plan!.id);
+                          setAllDays(updated);
+                        }}
+                      >
+                        <Ionicons name="checkmark-outline" size={14} color={colors.textSecondary} />
+                        <Text variant="caption" color="textSecondary" style={{ fontWeight: '600' }}>
+                          Done
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={styles.doneCheck}>
+                        <Ionicons name="checkmark-circle" size={18} color="#4E9F3D" />
+                      </View>
+                    )}
+                  </View>
+                </View>
+              )}
+            />
+          </View>
         </View>
       </Modal>
     </View>
@@ -523,6 +1098,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 12,
   },
+  nextReadingBox: {
+    borderWidth: 1,
+  },
   todayHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -539,6 +1117,15 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 10,
   },
+  explorerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
   reminderBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -549,13 +1136,70 @@ const styles = StyleSheet.create({
   reminderInfo: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+  },
+  timeSelectorWrap: {
+    gap: 8,
+  },
+  timeStepperBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+  },
+  timeUnitCol: {
+    alignItems: 'center',
+  },
+  stepperBtn: {
+    padding: 6,
+    borderRadius: 6,
+  },
+  ampmCol: {
     gap: 6,
+    marginLeft: 8,
+  },
+  ampmBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  presetChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 4,
+  },
+  presetChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  previewContainer: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    marginVertical: 10,
+  },
+  previewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  previewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 2,
   },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'center',
-    padding: 20,
+    padding: 16,
   },
   modalContent: {
     borderWidth: 1,
@@ -563,10 +1207,22 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     maxHeight: '90%',
   },
+  editTimeModalContent: {
+    borderWidth: 1,
+    padding: 20,
+    borderRadius: 16,
+  },
+  explorerModalContent: {
+    borderWidth: 1,
+    padding: 16,
+    borderRadius: 16,
+    height: '85%',
+  },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 8,
   },
   customForm: {
     borderWidth: 1,
@@ -594,21 +1250,52 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginVertical: 12,
-  },
-  timePillsWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  timePill: {
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    marginVertical: 10,
   },
   modalActions: {
     flexDirection: 'row',
     gap: 12,
     marginTop: 16,
+  },
+  filterBar: {
+    gap: 8,
+    marginVertical: 10,
+  },
+  filterTabs: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  filterTabBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  searchDayInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 13,
+  },
+  scheduleItemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  smallActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  doneCheck: {
+    paddingHorizontal: 6,
   },
 });

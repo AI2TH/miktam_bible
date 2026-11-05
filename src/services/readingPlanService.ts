@@ -1,10 +1,9 @@
 import { getDatabase } from './database';
 import { generateUUID } from '../utils/uuid';
 import { CHAPTERS_PER_BOOK } from '../stores/readerStore';
-import { getBookName } from '../utils/bookTranslations';
-import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
+import { getBookName, getBookAbbreviation } from '../utils/bookTranslations';
 import { addDays, format, parseISO } from 'date-fns';
+import { syncReadingPlanNotification, cancelReadingPlanNotification } from './notificationService';
 
 export type PlanType =
   | '1_year'
@@ -29,7 +28,7 @@ export const READING_PLAN_DEFINITIONS: Record<PlanType, PlanDefinition> = {
     type: '1_year',
     title: '1 Year Bible Journey',
     durationDays: 365,
-    description: 'Read the complete Holy Bible from Genesis to Revelation in 365 days.',
+    description: 'Read the complete Holy Bible from Genesis to Revelation in 365 days (~3.2 chapters/day).',
     scope: 'Complete Bible (66 Books)',
     dailyPace: '~3 chapters / day',
   },
@@ -37,7 +36,7 @@ export const READING_PLAN_DEFINITIONS: Record<PlanType, PlanDefinition> = {
     type: '6_months',
     title: '6 Months Whole Bible Sprint',
     durationDays: 180,
-    description: 'Intensive immersion through all 66 books of the Bible in 6 months.',
+    description: 'Intensive immersion through all 66 books of the Bible in 6 months (~6-7 chapters/day).',
     scope: 'Complete Bible (66 Books)',
     dailyPace: '~6-7 chapters / day',
   },
@@ -45,15 +44,15 @@ export const READING_PLAN_DEFINITIONS: Record<PlanType, PlanDefinition> = {
     type: 'csb_90',
     title: 'CSB 90-Day Bible Planner',
     durationDays: 90,
-    description: 'Read the complete Bible cover-to-cover in 90 intense, focused days.',
+    description: 'Read the entire Bible cover-to-cover in 90 intense, focused days (~13 chapters/day).',
     scope: 'Complete Bible (66 Books)',
-    dailyPace: '~12 chapters / day',
+    dailyPace: '~13 chapters / day',
   },
   'navigators_4track': {
     type: 'navigators_4track',
     title: 'Navigators Discipleship Planner',
     durationDays: 365,
-    description: '4 daily readings: Gospels, Law/History, Psalms/Wisdom, and Epistles for rich daily variety.',
+    description: '4 concurrent daily tracks: Gospels, Law/History, Psalms/Wisdom, and Epistles for rich daily variety.',
     scope: 'Whole Bible in 4 Daily Tracks',
     dailyPace: '4 readings / day',
   },
@@ -61,7 +60,7 @@ export const READING_PLAN_DEFINITIONS: Record<PlanType, PlanDefinition> = {
     type: '3_months',
     title: '3 Months New Testament',
     durationDays: 90,
-    description: 'Complete the entire New Testament from Matthew through Revelation in 90 days.',
+    description: 'Complete the entire New Testament from Matthew through Revelation in 90 days (~3 chapters/day).',
     scope: 'New Testament (27 Books)',
     dailyPace: '~3 chapters / day',
   },
@@ -69,7 +68,7 @@ export const READING_PLAN_DEFINITIONS: Record<PlanType, PlanDefinition> = {
     type: '2_months',
     title: '2 Months New Testament Sprint',
     durationDays: 60,
-    description: 'Rapid deep dive through the New Testament in 60 focused days.',
+    description: 'Rapid deep dive through the New Testament in 60 focused days (~4-5 chapters/day).',
     scope: 'New Testament (27 Books)',
     dailyPace: '~4-5 chapters / day',
   },
@@ -213,6 +212,63 @@ export async function getTodayReading(planId: string): Promise<ReadingPlanDay | 
   }
 }
 
+/** Get the earliest uncompleted reading assignment */
+export async function getNextUncompletedReading(planId: string): Promise<ReadingPlanDay | null> {
+  try {
+    const db = getDatabase();
+    const row = await db.getFirstAsync<any>(
+      'SELECT * FROM reading_plan_days WHERE plan_id = ? AND is_completed = 0 ORDER BY day_number ASC LIMIT 1',
+      [planId]
+    );
+    if (!row) return null;
+    return {
+      id: row.id,
+      planId: row.plan_id,
+      dayNumber: row.day_number,
+      bookNumber: row.book_number,
+      startChapter: row.start_chapter,
+      endChapter: row.end_chapter,
+      scheduledDate: row.scheduled_date,
+      readingLabel: row.reading_label,
+      isCompleted: false,
+      completedAt: row.completed_at,
+      bookName: getBookName(row.book_number),
+      status: 'pending',
+    };
+  } catch (e) {
+    console.error('[readingPlanService] Failed to get next uncompleted reading:', e);
+    return null;
+  }
+}
+
+/** Get all scheduled days for an active reading plan */
+export async function getAllPlanDays(planId: string): Promise<ReadingPlanDay[]> {
+  try {
+    const db = getDatabase();
+    const rows = await db.getAllAsync<any>(
+      'SELECT * FROM reading_plan_days WHERE plan_id = ? ORDER BY day_number ASC',
+      [planId]
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      planId: row.plan_id,
+      dayNumber: row.day_number,
+      bookNumber: row.book_number,
+      startChapter: row.start_chapter,
+      endChapter: row.end_chapter,
+      scheduledDate: row.scheduled_date,
+      readingLabel: row.reading_label,
+      isCompleted: row.is_completed === 1,
+      completedAt: row.completed_at,
+      bookName: getBookName(row.book_number),
+      status: row.is_completed === 1 ? 'completed' : 'pending',
+    }));
+  } catch (e) {
+    console.error('[readingPlanService] Failed to get all plan days:', e);
+    return [];
+  }
+}
+
 /** Get the scheduled reading for any specific calendar date */
 export async function getReadingForDate(dateStr: string): Promise<ReadingPlanDay | null> {
   try {
@@ -249,8 +305,37 @@ export async function getReadingForDate(dateStr: string): Promise<ReadingPlanDay
   }
 }
 
+/** Helper to build a sequential list of all chapters for a given set of book numbers */
+function buildChapterList(books: number[]): { bookNumber: number; chapter: number }[] {
+  const list: { bookNumber: number; chapter: number }[] = [];
+  for (const b of books) {
+    const total = CHAPTERS_PER_BOOK[b] || 1;
+    for (let c = 1; c <= total; c++) {
+      list.push({ bookNumber: b, chapter: c });
+    }
+  }
+  return list;
+}
+
+/** Helper to format reading range label across book boundaries */
+function formatRangeLabel(
+  first: { bookNumber: number; chapter: number },
+  last: { bookNumber: number; chapter: number },
+  useAbbrev: boolean = false
+): string {
+  const name1 = useAbbrev ? getBookAbbreviation(first.bookNumber) : getBookName(first.bookNumber);
+  const name2 = useAbbrev ? getBookAbbreviation(last.bookNumber) : getBookName(last.bookNumber);
+
+  if (first.bookNumber === last.bookNumber) {
+    return first.chapter === last.chapter
+      ? `${name1} ${first.chapter}`
+      : `${name1} ${first.chapter}–${last.chapter}`;
+  }
+  return `${name1} ${first.chapter} – ${name2} ${last.chapter}`;
+}
+
 /** Generate daily schedule entries for a plan with exact calendar dates */
-function generatePlanSchedule(
+export function generatePlanSchedule(
   planType: PlanType,
   startDateStr: string,
   customDays?: number,
@@ -263,43 +348,7 @@ function generatePlanSchedule(
   scheduledDate: string;
   readingLabel: string;
 }[] {
-  let duration = READING_PLAN_DEFINITIONS[planType]?.durationDays || 30;
-  if (planType === 'custom' && customDays && customDays > 0) {
-    duration = customDays;
-  }
-
-  // Determine books to include
-  let startBook = 1;
-  let endBook = 66;
-
-  if (planType === '3_months' || planType === '2_months') {
-    startBook = 40; // Matthew
-    endBook = 66;   // Revelation
-  } else if (planType === 'custom') {
-    if (customScope === 'nt') {
-      startBook = 40;
-      endBook = 66;
-    } else if (customScope === 'ot') {
-      startBook = 1;
-      endBook = 39;
-    } else if (customScope === 'gospels') {
-      startBook = 40;
-      endBook = 44; // Acts
-    } else if (customScope === 'wisdom') {
-      startBook = 18; // Job
-      endBook = 22; // Song of Solomon
-    }
-  }
-
-  const allChapters: { bookNumber: number; chapter: number }[] = [];
-  for (let b = startBook; b <= endBook; b++) {
-    const totalChapters = CHAPTERS_PER_BOOK[b] || 1;
-    for (let c = 1; c <= totalChapters; c++) {
-      allChapters.push({ bookNumber: b, chapter: c });
-    }
-  }
-
-  const totalChapCount = allChapters.length;
+  const baseDate = parseISO(startDateStr);
   const schedule: {
     dayNumber: number;
     bookNumber: number;
@@ -309,7 +358,94 @@ function generatePlanSchedule(
     readingLabel: string;
   }[] = [];
 
-  const baseDate = parseISO(startDateStr);
+  // ==========================================
+  // CASE 1: Navigators 4-Track Discipleship Plan
+  // ==========================================
+  if (planType === 'navigators_4track') {
+    const duration = 365;
+
+    // Track 1: Gospels (Matthew 40 to John 43 = 89 chapters)
+    const gospels = buildChapterList([40, 41, 42, 43]);
+
+    // Track 2: Law & OT History (Genesis 1 to Esther 17 = 436 chapters)
+    const lawHistory = buildChapterList(Array.from({ length: 17 }, (_, i) => i + 1));
+
+    // Track 3: Psalms & Wisdom (Psalms 19, Job 18, Proverbs 20, Ecclesiastes 21, Song of Solomon 22 = 243 chapters)
+    const wisdom = buildChapterList([19, 18, 20, 21, 22]);
+
+    // Track 4: Epistles & Acts (Acts 44 to Revelation 66 = 221 chapters)
+    const epistles = buildChapterList(Array.from({ length: 23 }, (_, i) => i + 44));
+
+    for (let day = 1; day <= duration; day++) {
+      const dayDate = addDays(baseDate, day - 1);
+      const scheduledDate = format(dayDate, 'yyyy-MM-dd');
+
+      // Track 1: Gospels
+      const gIdx = (day - 1) % gospels.length;
+      const gFirst = gospels[gIdx];
+      const gLabel = formatRangeLabel(gFirst, gFirst, true);
+
+      // Track 2: Law & History
+      const lStart = Math.floor(((day - 1) * lawHistory.length) / duration);
+      const lEnd = Math.max(lStart, Math.floor((day * lawHistory.length) / duration) - 1);
+      const lLabel = formatRangeLabel(lawHistory[lStart], lawHistory[lEnd], true);
+
+      // Track 3: Psalms & Wisdom
+      const wStart = Math.floor(((day - 1) * wisdom.length) / duration);
+      const wEnd = Math.max(wStart, Math.floor((day * wisdom.length) / duration) - 1);
+      const wLabel = formatRangeLabel(wisdom[wStart], wisdom[wEnd], true);
+
+      // Track 4: Epistles & Acts
+      const eStart = Math.floor(((day - 1) * epistles.length) / duration);
+      const eEnd = Math.max(eStart, Math.floor((day * epistles.length) / duration) - 1);
+      const eLabel = formatRangeLabel(epistles[eStart], epistles[eEnd], true);
+
+      const readingLabel = `${gLabel} • ${lLabel} • ${wLabel} • ${eLabel}`;
+
+      schedule.push({
+        dayNumber: day,
+        bookNumber: gFirst.bookNumber,
+        startChapter: gFirst.chapter,
+        endChapter: gFirst.chapter,
+        scheduledDate,
+        readingLabel,
+      });
+    }
+
+    return schedule;
+  }
+
+  // ==========================================
+  // CASE 2: Sequential & Scope-Based Plans
+  // ==========================================
+  let duration = READING_PLAN_DEFINITIONS[planType]?.durationDays || 30;
+  if (planType === 'custom' && customDays && customDays > 0) {
+    duration = customDays;
+  }
+
+  let booksToInclude: number[] = [];
+  if (planType === '3_months' || planType === '2_months') {
+    // New Testament (Matthew 40 to Revelation 66)
+    booksToInclude = Array.from({ length: 27 }, (_, i) => i + 40);
+  } else if (planType === 'custom') {
+    if (customScope === 'nt') {
+      booksToInclude = Array.from({ length: 27 }, (_, i) => i + 40);
+    } else if (customScope === 'ot') {
+      booksToInclude = Array.from({ length: 39 }, (_, i) => i + 1);
+    } else if (customScope === 'gospels') {
+      booksToInclude = [40, 41, 42, 43, 44]; // Matthew to Acts
+    } else if (customScope === 'wisdom') {
+      booksToInclude = [18, 19, 20, 21, 22]; // Job to Song of Solomon
+    } else {
+      booksToInclude = Array.from({ length: 66 }, (_, i) => i + 1);
+    }
+  } else {
+    // Whole Bible (Genesis 1 to Revelation 66) for 1_year, 6_months, csb_90
+    booksToInclude = Array.from({ length: 66 }, (_, i) => i + 1);
+  }
+
+  const allChapters = buildChapterList(booksToInclude);
+  const totalChapCount = allChapters.length;
 
   for (let day = 1; day <= duration; day++) {
     const startIdx = Math.floor(((day - 1) * totalChapCount) / duration);
@@ -321,15 +457,16 @@ function generatePlanSchedule(
     const dayDate = addDays(baseDate, day - 1);
     const scheduledDate = format(dayDate, 'yyyy-MM-dd');
 
-    const startChap = first.chapter;
-    const endChap = last.bookNumber === first.bookNumber ? last.chapter : (CHAPTERS_PER_BOOK[first.bookNumber] || first.chapter);
-    const bName = getBookName(first.bookNumber);
-    const readingLabel = startChap === endChap ? `${bName} ${startChap}` : `${bName} ${startChap}-${endChap}`;
+    const readingLabel = formatRangeLabel(first, last, false);
+    const endChap =
+      first.bookNumber === last.bookNumber
+        ? last.chapter
+        : (CHAPTERS_PER_BOOK[first.bookNumber] || first.chapter);
 
     schedule.push({
       dayNumber: day,
       bookNumber: first.bookNumber,
-      startChapter: startChap,
+      startChapter: first.chapter,
       endChapter: endChap,
       scheduledDate,
       readingLabel,
@@ -337,6 +474,21 @@ function generatePlanSchedule(
   }
 
   return schedule;
+}
+
+/** Get preview schedule for the first N days of a plan */
+export function getSchedulePreview(
+  planType: PlanType,
+  count: number = 5,
+  customDays?: number,
+  customScope?: 'whole' | 'nt' | 'ot' | 'gospels' | 'wisdom'
+): { dayNumber: number; readingLabel: string }[] {
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const full = generatePlanSchedule(planType, todayStr, customDays, customScope);
+  return full.slice(0, count).map((item) => ({
+    dayNumber: item.dayNumber,
+    readingLabel: item.readingLabel,
+  }));
 }
 
 /** Start a new reading plan (preset or custom) */
@@ -397,15 +549,8 @@ export async function startReadingPlan(
     }
   });
 
-  // Schedule daily notification
-  if (reminderEnabled && Platform.OS !== 'web') {
-    try {
-      const firstDay = schedule[0];
-      await schedulePlanNotification(reminderTime, finalTitle, firstDay.readingLabel, true);
-    } catch (e) {
-      console.warn('[readingPlanService] Failed scheduling notification:', e);
-    }
-  }
+  // Synchronize notifications dynamically
+  await syncReadingPlanNotification(planId);
 
   return {
     id: planId,
@@ -439,17 +584,16 @@ export async function completeDayReading(planId: string, dayNumber: number): Pro
     'UPDATE reading_plans SET current_day = ? WHERE id = ?',
     [dayNumber + 1, planId]
   );
+
+  // Synchronize dynamic notifications (cancels pending for today, schedules tomorrow with Day X+1)
+  await syncReadingPlanNotification(planId);
 }
 
 /** Cancel / Stop current reading plan */
 export async function cancelReadingPlan(planId: string): Promise<void> {
   const db = getDatabase();
   await db.runAsync('UPDATE reading_plans SET is_active = 0 WHERE id = ?', [planId]);
-  if (Platform.OS !== 'web') {
-    try {
-      await Notifications.cancelAllScheduledNotificationsAsync();
-    } catch (e) {}
-  }
+  await cancelReadingPlanNotification();
 }
 
 /** Update reminder time & enabled status */
@@ -464,59 +608,6 @@ export async function updatePlanReminder(
     [enabled ? 1 : 0, reminderTime, planId]
   );
 
-  if (Platform.OS !== 'web') {
-    if (enabled) {
-      const plan = await getActiveReadingPlan();
-      const today = await getTodayReading(planId);
-      const isPending = !today?.isCompleted;
-      const readingStr = today?.readingLabel || 'Daily Scripture Reading';
-      await schedulePlanNotification(
-        reminderTime,
-        plan?.title || 'Bible Reading Plan',
-        readingStr,
-        isPending
-      );
-    } else {
-      await Notifications.cancelAllScheduledNotificationsAsync();
-    }
-  }
-}
-
-/** Helper to schedule recurring daily notification with Expo */
-async function schedulePlanNotification(
-  timeStr: string,
-  planTitle: string,
-  readingStr: string,
-  isPending: boolean = true
-) {
-  const [hourStr, minuteStr] = timeStr.split(':');
-  const hour = parseInt(hourStr || '8', 10);
-  const minute = parseInt(minuteStr || '0', 10);
-
-  // Request permissions if needed
-  const { status } = await Notifications.getPermissionsAsync();
-  if (status !== 'granted') {
-    const { status: reqStatus } = await Notifications.requestPermissionsAsync();
-    if (reqStatus !== 'granted') return;
-  }
-
-  // Cancel prior reminders
-  await Notifications.cancelAllScheduledNotificationsAsync();
-
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title: isPending ? `⏳ Reading Pending: ${planTitle}` : `📖 ${planTitle}`,
-      body: isPending
-        ? `Your reading for today (${readingStr}) is pending. Take a moment to read and grow!`
-        : `Today's reading is complete: ${readingStr}. Keep your streak going!`,
-      sound: true,
-      color: '#C9A55C',
-    },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.DAILY,
-      hour,
-      minute,
-      channelId: 'default',
-    },
-  });
+  // Synchronize notifications
+  await syncReadingPlanNotification(planId);
 }

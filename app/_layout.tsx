@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { LogBox, View, Image, StyleSheet, ActivityIndicator, Text } from 'react-native';
 import { initDatabase } from '../src/services/database';
 import { initSafeStorage } from '../src/utils/storage';
+import { initNotificationChannels } from '../src/services/notificationService';
 import { useSettingsStore } from '../src/stores/settingsStore';
 import { useTheme } from '../src/theme';
 
@@ -33,6 +34,7 @@ export default function RootLayout() {
         await initSafeStorage();
         useSettingsStore.getState().hydrate();
         await initDatabase();
+        initNotificationChannels().catch(() => {});
         console.log('[RootLayout] Database and storage initialization complete');
         setDbInitialized(true);
       } catch (e: any) {

@@ -8,6 +8,7 @@ import { ReadingPlanSection } from '../../src/components/calendar/ReadingPlanSec
 import {
   getActiveReadingPlan,
   getTodayReading,
+  getNextUncompletedReading,
   startReadingPlan,
   completeDayReading,
   cancelReadingPlan,
@@ -16,6 +17,7 @@ import {
   ReadingPlan,
   ReadingPlanDay,
 } from '../../src/services/readingPlanService';
+import { syncReadingPlanNotification } from '../../src/services/notificationService';
 import { getStreakCount } from '../../src/services/readingProgressService';
 import { useReaderStore } from '../../src/stores/readerStore';
 import { router, useNavigation } from 'expo-router';
@@ -28,6 +30,7 @@ export default function PlansScreen() {
 
   const [readingPlan, setReadingPlan] = useState<ReadingPlan | null>(null);
   const [todayReading, setTodayReading] = useState<ReadingPlanDay | null>(null);
+  const [nextReading, setNextReading] = useState<ReadingPlanDay | null>(null);
   const [streak, setStreak] = useState(0);
 
   const loadPlanData = async () => {
@@ -38,8 +41,13 @@ export default function PlansScreen() {
       if (plan) {
         const reading = await getTodayReading(plan.id);
         setTodayReading(reading);
+        const nextR = await getNextUncompletedReading(plan.id);
+        setNextReading(nextR);
+        // Ensure planner notification is in sync with latest completion state
+        syncReadingPlanNotification(plan.id).catch((e) => {});
       } else {
         setTodayReading(null);
+        setNextReading(null);
       }
       const streakCount = await getStreakCount();
       setStreak(streakCount);
@@ -138,6 +146,7 @@ export default function PlansScreen() {
         <ReadingPlanSection
           plan={readingPlan}
           todayReading={todayReading}
+          nextReading={nextReading}
           onStartPlan={handleStartPlan}
           onCompleteDay={handleCompletePlanDay}
           onCancelPlan={handleCancelPlan}

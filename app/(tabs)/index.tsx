@@ -16,6 +16,7 @@ import { getBookName } from '../../src/utils/bookTranslations';
 import { Ionicons } from '@expo/vector-icons';
 import { isDatabaseInitialized } from '../../src/services/database';
 import { loadVerseOfTheDay } from '../../src/services/verseOfTheDayService';
+import { scheduleDailyVotdNotification } from '../../src/services/notificationService';
 import { useSettingsStore } from '../../src/stores/settingsStore';
 
 export default function HomeScreen() {
@@ -55,6 +56,11 @@ export default function HomeScreen() {
         if (dailyVotd && active) {
           setVotd(dailyVotd);
         }
+
+        // Schedule / ensure daily 12:00 AM morning notification for Verse of the Day
+        scheduleDailyVotdNotification(currentVersionId).catch((err) =>
+          console.warn('[Home] Failed to schedule daily VOTD notification:', err)
+        );
       } catch (e) {
         console.warn('[Home] Failed to load statistics or VOTD from database:', e);
       }
