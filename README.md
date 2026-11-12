@@ -323,7 +323,7 @@ Miktam Bible is designed to work **entirely offline** after initial installation
 
 ## License
 
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+This project is licensed under the **GNU General Public License v3.0**. See [LICENSE](LICENSE) for the full text. Parts generated from the Expo project template remain under the MIT License; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ---
 
