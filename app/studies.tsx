@@ -9,6 +9,7 @@ import { useReaderStore } from '../src/stores/readerStore';
 import { getBookName } from '../src/utils/bookTranslations';
 import { router } from 'expo-router';
 import { openChapterFromOverlay } from '../src/utils/navigation';
+import { guarded } from '../src/utils/reportError';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../src/components/ui/Text';
 import { Card } from '../src/components/ui/Card';
@@ -30,9 +31,9 @@ export default function StudiesScreen() {
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: async () => {
+        onPress: guarded('Studies', async () => {
           await remove(id);
-        },
+        }, 'Could not delete the note.'),
       },
     ]);
   };

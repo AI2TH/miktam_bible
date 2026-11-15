@@ -21,6 +21,7 @@ import { startOfMonth, endOfMonth, format, parseISO } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useNavigation } from 'expo-router';
 import { isDatabaseInitialized } from '../../src/services/database';
+import { guarded } from '../../src/utils/reportError';
 import { DailyTodoList } from '../../src/components/calendar/DailyTodoList';
 import { ChurchMeetingPlanner } from '../../src/components/calendar/ChurchMeetingPlanner';
 import {
@@ -207,38 +208,37 @@ export default function CalendarScreen() {
     loadPlannerData(selectedDate);
   }, [selectedDate]);
 
-  const handleAddTodo = async (title: string) => {
+  const handleAddTodo = guarded('Calendar', async (title: string) => {
     await addTodo(selectedDate, title);
-    loadPlannerData(selectedDate);
-  };
+    await loadPlannerData(selectedDate);
+  }, 'Could not add the to-do.');
 
-  const handleToggleTodo = async (id: string, completed: boolean) => {
+  const handleToggleTodo = guarded('Calendar', async (id: string, completed: boolean) => {
     await toggleTodo(id, completed);
-    loadPlannerData(selectedDate);
-  };
+    await loadPlannerData(selectedDate);
+  }, 'Could not update the to-do.');
 
-  const handleDeleteTodo = async (id: string) => {
+  const handleDeleteTodo = guarded('Calendar', async (id: string) => {
     await deleteTodo(id);
-    loadPlannerData(selectedDate);
-  };
+    await loadPlannerData(selectedDate);
+  }, 'Could not delete the to-do.');
 
-  const handleAddEvent = async (event: Omit<CalendarEvent, 'id' | 'createdAt'>) => {
+  const handleAddEvent = guarded('Calendar', async (event: Omit<CalendarEvent, 'id' | 'createdAt'>) => {
     await addEvent(event);
-    loadPlannerData(selectedDate);
-  };
+    await loadPlannerData(selectedDate);
+  }, 'Could not save the event.');
 
-  const handleDeleteEvent = async (id: string) => {
+  const handleDeleteEvent = guarded('Calendar', async (id: string) => {
     await deleteEvent(id);
-    loadPlannerData(selectedDate);
-  };
+    await loadPlannerData(selectedDate);
+  }, 'Could not delete the event.');
 
-  const handleCompletePlanDay = async (dayNumber: number) => {
+  const handleCompletePlanDay = guarded('Calendar', async (dayNumber: number) => {
     if (!readingPlan) return;
     await completeDayReading(readingPlan.id, dayNumber);
-    loadPlanData();
-    loadPlannerData(selectedDate);
+    await Promise.all([loadPlanData(), loadPlannerData(selectedDate)]);
     Alert.alert('Congratulations! 🎉', "Today's Bible reading marked as complete! Keep it up.");
-  };
+  }, 'Could not mark the reading as complete.');
 
   const handleNavigateToReading = (bookNum: number, chapNum: number) => {
     navigateTo(bookNum, chapNum);

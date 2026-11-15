@@ -10,6 +10,7 @@ import { useReaderStore } from '../src/stores/readerStore';
 import { getBookName } from '../src/utils/bookTranslations';
 import { router } from 'expo-router';
 import { openChapterFromOverlay } from '../src/utils/navigation';
+import { guarded } from '../src/utils/reportError';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../src/components/ui/Text';
 
@@ -33,10 +34,10 @@ export default function BookmarksScreen() {
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: async () => {
+        onPress: guarded('Bookmarks', async () => {
           if (item.id) await remove(item.id);
           await removeByVerse(item.bookNumber, item.chapter, item.verseNumber);
-        },
+        }, 'Could not delete the highlight.'),
       },
     ]);
   };
