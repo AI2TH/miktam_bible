@@ -14,6 +14,7 @@ import { Text } from '../ui/Text';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Ionicons } from '@expo/vector-icons';
+import { format, parseISO } from 'date-fns';
 import {
   READING_PLAN_DEFINITIONS,
   PlanType,
@@ -26,7 +27,10 @@ import {
 interface ReadingPlanSectionProps {
   plan: ReadingPlan | null;
   todayReading: ReadingPlanDay | null;
-  nextReading?: ReadingPlanDay | null;
+  /** Earlier days of the plan that are not done yet, oldest first */
+  pendingDays?: ReadingPlanDay[];
+  /** The next days after today, so they can be read early */
+  upcomingDays?: ReadingPlanDay[];
   onStartPlan: (
     type: PlanType,
     reminderTime: string,
@@ -249,10 +253,99 @@ function CustomTimeSelector({
   );
 }
 
+/** "Mon, 10 Nov" for a 'yyyy-MM-dd' plan date */
+function formatPlanDate(dateKey?: string): string | null {
+  if (!dateKey) return null;
+  try {
+    return format(parseISO(dateKey), 'EEE, d MMM');
+  } catch {
+    return dateKey;
+  }
+}
+
+/** Number of pending days shown before "Show all" */
+const PENDING_PREVIEW_COUNT = 3;
+
+interface PlanDayRowProps {
+  day: ReadingPlanDay;
+  onRead: () => void;
+  onMarkDone: () => void;
+}
+
+/** One plan day: day number, date, passage, and Read / Done actions */
+function PlanDayRow({ day, onRead, onMarkDone }: PlanDayRowProps) {
+  const { colors } = useTheme();
+  const dateLabel = formatPlanDate(day.scheduledDate);
+  const passage = day.readingLabel || `${day.bookName} ${day.startChapter}`;
+
+  return (
+    <View
+      style={[
+        styles.scheduleItemCard,
+        {
+          backgroundColor: colors.surface,
+          borderColor: day.isCompleted ? '#4E9F3D50' : colors.border,
+        },
+      ]}
+    >
+      <View style={{ flex: 1, marginRight: 8 }}>
+        <Text
+          variant="caption"
+          style={{ fontWeight: 'bold', color: day.isCompleted ? '#4E9F3D' : colors.primary }}
+        >
+          Day {day.dayNumber}
+          {dateLabel ? (
+            <Text variant="caption" color="textTertiary" style={{ fontWeight: 'normal' }}>
+              {'  •  '}
+              {dateLabel}
+            </Text>
+          ) : null}
+        </Text>
+        <Text variant="body" style={{ fontWeight: '600', marginTop: 2 }}>
+          {passage}
+        </Text>
+      </View>
+
+      <View style={styles.dayRowActions}>
+        <TouchableOpacity
+          style={[styles.smallActionBtn, { backgroundColor: colors.primary + '20' }]}
+          onPress={onRead}
+          accessibilityRole="button"
+          accessibilityLabel={`Read day ${day.dayNumber}: ${passage}`}
+        >
+          <Ionicons name="book-outline" size={14} color={colors.primary} />
+          <Text variant="caption" color="primary" style={{ fontWeight: 'bold' }}>
+            Read
+          </Text>
+        </TouchableOpacity>
+
+        {day.isCompleted ? (
+          <View style={styles.doneCheck} accessibilityLabel={`Day ${day.dayNumber} done`}>
+            <Ionicons name="checkmark-circle" size={18} color="#4E9F3D" />
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={[styles.smallActionBtn, { backgroundColor: colors.surfaceElevated }]}
+            onPress={onMarkDone}
+            accessibilityRole="button"
+            accessibilityLabel={`Mark day ${day.dayNumber} as done`}
+          >
+            <Ionicons name="checkmark-outline" size={14} color={colors.textSecondary} />
+            <Text variant="caption" color="textSecondary" style={{ fontWeight: '600' }}>
+              Done
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
+}
+
 export function ReadingPlanSection({
   plan,
   todayReading,
-  nextReading,
+  pendingDays = [],
+  upcomingDays = [],
   onStartPlan,
   onCompleteDay,
   onCancelPlan,
@@ -276,6 +369,12 @@ export function ReadingPlanSection({
   const [allDays, setAllDays] = useState<ReadingPlanDay[]>([]);
   const [scheduleFilter, setScheduleFilter] = useState<'all' | 'pending' | 'completed'>('all');
   const [searchDayText, setSearchDayText] = useState('');
+
+  // Pending (missed) days list: collapsed to the oldest few by default
+  const [showAllPending, setShowAllPending] = useState(false);
+  const visiblePendingDays = showAllPending
+    ? pendingDays
+    : pendingDays.slice(0, PENDING_PREVIEW_COUNT);
 
   // Custom Plan Generator State
   const [customTitle, setCustomTitle] = useState('My Bible Plan');
@@ -541,46 +640,63 @@ export function ReadingPlanSection({
             </View>
           )}
 
-          {/* If today is completed, show Next Upcoming Reading */}
-          {todayReading?.isCompleted && nextReading && nextReading.dayNumber !== todayReading.dayNumber && (
-            <View
-              style={[
-                styles.nextReadingBox,
-                {
-                  backgroundColor: colors.surfaceElevated,
-                  borderColor: colors.border,
-                  borderRadius: borderRadius.md,
-                  padding: spacing.md,
-                  marginBottom: 12,
-                },
-              ]}
-            >
+          {/* PENDING: earlier days that are not done yet */}
+          {pendingDays.length > 0 && (
+            <View style={styles.daySection}>
               <View style={styles.todayHeader}>
-                <Ionicons name="arrow-forward-circle" size={18} color={colors.primary} />
-                <Text variant="bodySmall" color="primary" style={{ fontWeight: 'bold' }}>
-                  UP NEXT • DAY {nextReading.dayNumber}:
+                <Ionicons name="alert-circle-outline" size={18} color="#E5A93C" />
+                <Text variant="bodySmall" style={{ fontWeight: 'bold', color: '#E5A93C', flexShrink: 1 }}>
+                  Pending: not yet done ({pendingDays.length})
                 </Text>
               </View>
-
-              <Text variant="h3" style={{ fontWeight: '700', marginVertical: 4 }}>
-                {nextReading.readingLabel}
+              <Text variant="caption" color="textTertiary" style={styles.daySectionHint}>
+                Earlier days of this plan you haven't marked done.
               </Text>
+              <View style={styles.dayList}>
+                {visiblePendingDays.map((day) => (
+                  <PlanDayRow
+                    key={day.id}
+                    day={day}
+                    onRead={() => onNavigateToReading(day.bookNumber, day.startChapter)}
+                    onMarkDone={() => onCompleteDay(day.dayNumber)}
+                  />
+                ))}
+              </View>
+              {pendingDays.length > PENDING_PREVIEW_COUNT && (
+                <TouchableOpacity
+                  onPress={() => setShowAllPending((v) => !v)}
+                  style={styles.showAllBtn}
+                  accessibilityRole="button"
+                >
+                  <Text variant="caption" color="primary" style={{ fontWeight: '700' }}>
+                    {showAllPending ? 'Show fewer' : `Show all ${pendingDays.length} pending days`}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
 
-              <View style={styles.actionRow}>
-                <Button
-                  label="Read Ahead 📖"
-                  onPress={() =>
-                    onNavigateToReading(nextReading.bookNumber, nextReading.startChapter)
-                  }
-                  variant="primary"
-                  style={{ flex: 1 }}
-                />
-                <Button
-                  label="Mark Done ✓"
-                  onPress={() => onCompleteDay(nextReading.dayNumber)}
-                  variant="outline"
-                  style={{ flex: 1 }}
-                />
+          {/* READ AHEAD: the next few days, so they can be read early */}
+          {upcomingDays.length > 0 && (
+            <View style={styles.daySection}>
+              <View style={styles.todayHeader}>
+                <Ionicons name="play-forward-outline" size={18} color={colors.primary} />
+                <Text variant="bodySmall" color="primary" style={{ fontWeight: 'bold', flexShrink: 1 }}>
+                  Read ahead
+                </Text>
+              </View>
+              <Text variant="caption" color="textTertiary" style={styles.daySectionHint}>
+                Coming up next. Read and mark them done early if you have time.
+              </Text>
+              <View style={styles.dayList}>
+                {upcomingDays.map((day) => (
+                  <PlanDayRow
+                    key={day.id}
+                    day={day}
+                    onRead={() => onNavigateToReading(day.bookNumber, day.startChapter)}
+                    onMarkDone={() => onCompleteDay(day.dayNumber)}
+                  />
+                ))}
               </View>
             </View>
           )}
@@ -1098,8 +1214,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 12,
   },
-  nextReadingBox: {
-    borderWidth: 1,
+  daySection: {
+    marginBottom: 12,
+  },
+  daySectionHint: {
+    marginTop: 2,
+    marginBottom: 8,
+  },
+  dayList: {
+    gap: 8,
+  },
+  dayRowActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  showAllBtn: {
+    alignSelf: 'flex-start',
+    paddingVertical: 8,
   },
   todayHeader: {
     flexDirection: 'row',

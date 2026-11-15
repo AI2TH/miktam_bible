@@ -7,8 +7,7 @@ import { StreakBadge } from '../../src/components/calendar/StreakBadge';
 import { ReadingPlanSection } from '../../src/components/calendar/ReadingPlanSection';
 import {
   getActiveReadingPlan,
-  getTodayReading,
-  getNextUncompletedReading,
+  getAllPlanDays,
   startReadingPlan,
   completeDayReading,
   cancelReadingPlan,
@@ -17,6 +16,7 @@ import {
   ReadingPlan,
   ReadingPlanDay,
 } from '../../src/services/readingPlanService';
+import { groupPlanDays, toDateKey } from '../../src/services/readingPlanDays';
 import { syncReadingPlanNotification } from '../../src/services/notificationService';
 import { getStreakCount } from '../../src/services/readingProgressService';
 import { useReaderStore } from '../../src/stores/readerStore';
@@ -30,7 +30,8 @@ export default function PlansScreen() {
 
   const [readingPlan, setReadingPlan] = useState<ReadingPlan | null>(null);
   const [todayReading, setTodayReading] = useState<ReadingPlanDay | null>(null);
-  const [nextReading, setNextReading] = useState<ReadingPlanDay | null>(null);
+  const [pendingDays, setPendingDays] = useState<ReadingPlanDay[]>([]);
+  const [upcomingDays, setUpcomingDays] = useState<ReadingPlanDay[]>([]);
   const [streak, setStreak] = useState(0);
 
   const loadPlanData = async () => {
@@ -39,15 +40,19 @@ export default function PlansScreen() {
       const plan = await getActiveReadingPlan();
       setReadingPlan(plan);
       if (plan) {
-        const reading = await getTodayReading(plan.id);
-        setTodayReading(reading);
-        const nextR = await getNextUncompletedReading(plan.id);
-        setNextReading(nextR);
+        // One query for the whole plan; today, missed days and read-ahead days
+        // all come from the same snapshot so they never disagree.
+        const days = await getAllPlanDays(plan.id);
+        const groups = groupPlanDays(days, toDateKey(new Date()));
+        setTodayReading(groups.today);
+        setPendingDays(groups.pending);
+        setUpcomingDays(groups.upcoming);
         // Ensure planner notification is in sync with latest completion state
         syncReadingPlanNotification(plan.id).catch((e) => {});
       } else {
         setTodayReading(null);
-        setNextReading(null);
+        setPendingDays([]);
+        setUpcomingDays([]);
       }
       const streakCount = await getStreakCount();
       setStreak(streakCount);
@@ -96,9 +101,14 @@ export default function PlansScreen() {
 
   const handleCompletePlanDay = async (dayNumber: number) => {
     if (!readingPlan) return;
+    const isToday = todayReading?.dayNumber === dayNumber;
     await completeDayReading(readingPlan.id, dayNumber);
     loadPlanData();
-    Alert.alert('Congratulations! 🎉', "Today's Bible reading marked as complete! Keep it up.");
+    if (isToday) {
+      Alert.alert('Congratulations! 🎉', "Today's Bible reading marked as complete! Keep it up.");
+    } else {
+      Alert.alert('Marked as done', `Day ${dayNumber} is marked as complete.`);
+    }
   };
 
   const handleCancelPlan = () => {
@@ -115,6 +125,8 @@ export default function PlansScreen() {
             await cancelReadingPlan(readingPlan.id);
             setReadingPlan(null);
             setTodayReading(null);
+            setPendingDays([]);
+            setUpcomingDays([]);
           },
         },
       ]
@@ -146,7 +158,8 @@ export default function PlansScreen() {
         <ReadingPlanSection
           plan={readingPlan}
           todayReading={todayReading}
-          nextReading={nextReading}
+          pendingDays={pendingDays}
+          upcomingDays={upcomingDays}
           onStartPlan={handleStartPlan}
           onCompleteDay={handleCompletePlanDay}
           onCancelPlan={handleCancelPlan}
