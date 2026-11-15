@@ -20,6 +20,36 @@ export const FALLBACK_SEED = 'miktam';
 /** Identifier prefix of daily verse notifications (one per date, e.g. miktam_votd_2026-11-15_0730) */
 export const DAILY_VERSE_PREFIX = 'miktam_votd_';
 
+/**
+ * The daily verse notification is on by default at 12:00 AM for everyone,
+ * new installs and existing users alike. A time the user picks, or turning it
+ * off, is kept.
+ */
+export const DEFAULT_DAILY_VERSE_TIME = '00:00';
+
+/** Stored setting value for "the user turned the daily verse notification off" */
+export const DAILY_VERSE_OFF = 'off';
+
+/**
+ * The daily verse time from the stored setting ('dailyVerseTime'):
+ * - nothing stored (new install, or upgraded without ever choosing): the 12:00 AM default;
+ * - 'off' (or '' as written by an earlier build of this change): off, the user turned it off;
+ * - a valid 'HH:mm': the user's own time, kept as is.
+ * Anything else falls back to the default.
+ */
+export function resolveDailyVerseTime(stored: string | null | undefined): string | null {
+  if (stored === undefined || stored === null) return DEFAULT_DAILY_VERSE_TIME;
+  if (stored === DAILY_VERSE_OFF || stored === '') return null;
+  const match = /^(\d{1,2}):(\d{2})$/.exec(stored.trim());
+  if (match && Number(match[1]) <= 23 && Number(match[2]) <= 59) return stored.trim();
+  return DEFAULT_DAILY_VERSE_TIME;
+}
+
+/** What to store for a user's choice: their 'HH:mm', or DAILY_VERSE_OFF */
+export function dailyVerseSettingValue(time: string | null): string {
+  return time ? time : DAILY_VERSE_OFF;
+}
+
 /** Days ahead that get a daily verse notification */
 export const DAILY_VERSE_WINDOW_DAYS = 14;
 
@@ -291,7 +321,8 @@ function dateKeyOf(date: Date): string {
 /**
  * When the daily verse notifications fire: one per date at the user's time,
  * for the next `days` days, leaving out a time already past today. None when
- * no time is set (there is no default time).
+ * the notification is off (time null). The default time is applied by
+ * resolveDailyVerseTime(), not here.
  */
 export function planDailyVerseNotifications(
   now: Date,

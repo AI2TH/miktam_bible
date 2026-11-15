@@ -1,11 +1,16 @@
 import { create } from 'zustand';
 import { safeStorage as storage } from '../utils/storage';
+import {
+  DEFAULT_DAILY_VERSE_TIME,
+  dailyVerseSettingValue,
+  resolveDailyVerseTime,
+} from '../services/dailyVerse';
 
 interface SettingsState {
   themeMode: 'light' | 'dark' | 'system';
   preferredVersion: string;
   preferredLanguage: string;
-  /** 'HH:mm' for the daily verse notification; null means off (no default time) */
+  /** 'HH:mm' for the daily verse notification (12:00 AM by default); null means the user turned it off */
   dailyVerseTime: string | null;
 
   setThemeMode: (mode: 'light' | 'dark' | 'system') => void;
@@ -19,7 +24,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   themeMode: 'system',
   preferredVersion: 'kjv',
   preferredLanguage: 'en',
-  dailyVerseTime: null,
+  dailyVerseTime: DEFAULT_DAILY_VERSE_TIME,
 
   setThemeMode: (mode) => {
     storage.set('themeMode', mode);
@@ -35,8 +40,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     set({ preferredLanguage: lang });
   },
   setDailyVerseTime: (time) => {
-    // Stored as '' when off: the storage layer has no delete
-    storage.set('dailyVerseTime', time || '');
+    // An explicit choice is stored ('HH:mm' or 'off') so it survives upgrades;
+    // nothing stored means the user never chose and gets the 12:00 AM default.
+    storage.set('dailyVerseTime', dailyVerseSettingValue(time));
     set({ dailyVerseTime: time || null });
   },
   hydrate: () => {
@@ -50,7 +56,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         themeMode: mode || 'system',
         preferredVersion: version || 'kjv',
         preferredLanguage: lang || 'en',
-        dailyVerseTime: dailyVerseTime || null,
+        // Upgrade path: users who never chose get the 12:00 AM default turned on
+        dailyVerseTime: resolveDailyVerseTime(dailyVerseTime),
       });
       console.log('[SettingsStore] Settings successfully hydrated from storage');
     } catch (e) {

@@ -61,8 +61,8 @@ export default function HomeScreen() {
           setVotd(dailyVotd);
         }
 
-        // One daily verse notification a day at the user's time (none until a time is set),
-        // carrying the same verse as the card above
+        // One daily verse notification a day: 12:00 AM unless the user chose
+        // another time or turned it off. Carries the same verse as the card above.
         scheduleDailyVotdNotification(currentVersionId, useSettingsStore.getState().dailyVerseTime).catch((err) =>
           console.warn('[Home] Failed to schedule daily VOTD notification:', err)
         );
@@ -156,7 +156,7 @@ export default function HomeScreen() {
             accessibilityRole="button"
             accessibilityLabel={
               dailyVerseLabel
-                ? `Daily verse notification at ${dailyVerseLabel}. Change time`
+                ? `Daily verse at ${dailyVerseLabel}. Change`
                 : 'Daily verse notification off. Set a time'
             }
           >
@@ -167,7 +167,7 @@ export default function HomeScreen() {
             />
             <Text variant="caption" color="textSecondary" style={{ flex: 1, fontWeight: '600' }}>
               {dailyVerseLabel
-                ? `Daily verse notification: ${dailyVerseLabel}`
+                ? `Daily verse at ${dailyVerseLabel} · Change`
                 : 'Daily verse notification: off. Set a time'}
             </Text>
             <Ionicons name="pencil" size={12} color={colors.primary} />

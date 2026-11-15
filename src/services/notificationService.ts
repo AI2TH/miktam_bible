@@ -38,7 +38,7 @@ export async function initNotificationChannels(): Promise<void> {
 
     await Notifications.setNotificationChannelAsync('daily_votd', {
       name: 'Verse of the Day',
-      description: 'One verse a day, at the time you choose',
+      description: 'One verse a day, at 12:00 AM or the time you choose',
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#C9A55C',
@@ -82,11 +82,12 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 }
 
 /**
- * Schedule the daily verse notification: exactly one per day, at the time the
- * user picked, for the next DAILY_VERSE_WINDOW_DAYS days. Each carries that
- * date's verse and reference, the same date-seeded pick the Home screen shows,
- * in the given translation (falling back to KJV). With no time set, every
- * daily verse notification is cancelled; there is no default time.
+ * Schedule the daily verse notification: exactly one per day, at `time`
+ * (12:00 AM by default, see resolveDailyVerseTime), for the next
+ * DAILY_VERSE_WINDOW_DAYS days. Each carries that date's verse and reference,
+ * the same date-seeded pick the Home screen shows, in the given translation
+ * (falling back to KJV). With `time` null (turned off by the user), every
+ * daily verse notification is cancelled.
  *
  * Re-run whenever Home opens or the translation or time changes; it keeps
  * notifications whose text is unchanged and replaces the rest. The old

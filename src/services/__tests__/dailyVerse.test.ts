@@ -7,6 +7,10 @@ import {
   pickDailyVerse,
   pickDailyVerseIndex,
   planDailyVerseNotifications,
+  resolveDailyVerseTime,
+  dailyVerseSettingValue,
+  DEFAULT_DAILY_VERSE_TIME,
+  DAILY_VERSE_OFF,
 } from '../dailyVerse.ts';
 
 const SEED = '3f1c9a7e-2b4d-4c8e-9f10-5a6b7c8d9e0f';
@@ -69,7 +73,7 @@ test('every pick is a valid pool entry', () => {
   }
 });
 
-test('no time set: no daily verse notifications', () => {
+test('turned off (time null): no daily verse notifications', () => {
   assert.deepEqual(planDailyVerseNotifications(new Date(2026, 10, 15, 6), null), []);
   assert.deepEqual(planDailyVerseNotifications(new Date(2026, 10, 15, 6), 'bad'), []);
 });
@@ -94,4 +98,41 @@ test('changing the time changes every id, so the old ones are replaced', () => {
   const early = new Set(planDailyVerseNotifications(now, '07:30').map((p) => p.id));
   const late = planDailyVerseNotifications(now, '21:00').map((p) => p.id);
   assert.ok(late.every((id) => !early.has(id)));
+});
+
+test('default: on at 12:00 AM every day for users who never chose (new install or upgrade)', () => {
+  // Nothing stored: a new install, or an existing user after the upgrade
+  assert.equal(resolveDailyVerseTime(undefined), DEFAULT_DAILY_VERSE_TIME);
+  assert.equal(resolveDailyVerseTime(null), '00:00');
+  const plan = planDailyVerseNotifications(new Date(2026, 10, 15, 9), resolveDailyVerseTime(undefined), 14);
+  // Today's midnight has passed, so it starts tomorrow at 00:00, one a day
+  assert.equal(plan.length, 13);
+  assert.equal(plan[0].id, `${DAILY_VERSE_PREFIX}2026-11-16_0000`);
+  assert.ok(plan.every((p) => p.fireAt.getHours() === 0 && p.fireAt.getMinutes() === 0));
+  assert.equal(new Set(plan.map((p) => p.dateKey)).size, plan.length);
+});
+
+test('a time the user chose is kept across upgrades', () => {
+  const stored = dailyVerseSettingValue('07:30');
+  assert.equal(stored, '07:30');
+  assert.equal(resolveDailyVerseTime(stored), '07:30');
+  const plan = planDailyVerseNotifications(new Date(2026, 10, 15, 6), resolveDailyVerseTime(stored), 3);
+  assert.deepEqual(plan.map((p) => p.id), [
+    `${DAILY_VERSE_PREFIX}2026-11-15_0730`,
+    `${DAILY_VERSE_PREFIX}2026-11-16_0730`,
+    `${DAILY_VERSE_PREFIX}2026-11-17_0730`,
+  ]);
+});
+
+test('turning it off is kept too, and is not reset to the default', () => {
+  const stored = dailyVerseSettingValue(null);
+  assert.equal(stored, DAILY_VERSE_OFF);
+  assert.equal(resolveDailyVerseTime(stored), null);
+  assert.equal(resolveDailyVerseTime(''), null); // written as "off" by an earlier build of this PR
+  assert.deepEqual(planDailyVerseNotifications(new Date(2026, 10, 15, 6), resolveDailyVerseTime(stored)), []);
+});
+
+test('a corrupt stored value falls back to the 12:00 AM default', () => {
+  assert.equal(resolveDailyVerseTime('25:99'), '00:00');
+  assert.equal(resolveDailyVerseTime('soon'), '00:00');
 });
