@@ -2,6 +2,7 @@ import { getDatabase } from './database';
 import type { ReadingProgress } from '../types/user';
 import { generateUUID } from '../utils/uuid';
 import { format, subDays, parseISO, differenceInDays } from 'date-fns';
+import { TOTAL_STATS_SQL, WEEK_CHAPTERS_SQL, weekWindow } from './readingStatsQueries';
 
 /** Mark a specific chapter as read today */
 export async function markChapterAsRead(
@@ -124,15 +125,12 @@ export async function getReadingStats(): Promise<{
 }> {
   const db = getDatabase();
 
-  const totalRow = await db.getFirstAsync<{ cnt: number; time: number }>(
-    'SELECT COUNT(id) as cnt, SUM(reading_time_secs) as time FROM reading_progress'
-  );
+  // Distinct chapters, not rows (one row per chapter, translation and day)
+  const totalRow = await db.getFirstAsync<{ cnt: number; time: number }>(TOTAL_STATS_SQL);
 
-  const startOfWeek = format(subDays(new Date(), 7), 'yyyy-MM-dd');
-  const weekRow = await db.getFirstAsync<{ cnt: number }>(
-    'SELECT COUNT(id) as cnt FROM reading_progress WHERE read_date >= ?',
-    [startOfWeek]
-  );
+  // Today and the six days before it (subDays(7) covered eight days)
+  const [weekStart, weekEnd] = weekWindow(new Date());
+  const weekRow = await db.getFirstAsync<{ cnt: number }>(WEEK_CHAPTERS_SQL, [weekStart, weekEnd]);
 
   return {
     totalChaptersRead: totalRow?.cnt ?? 0,
