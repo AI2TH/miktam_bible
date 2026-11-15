@@ -10,6 +10,7 @@ import {
   getAllPlanDays,
   startReadingPlan,
   completeDayReading,
+  setPlanChapterRead,
   cancelReadingPlan,
   updatePlanReminder,
   PlanType,
@@ -111,6 +112,20 @@ export default function PlansScreen() {
     }
   };
 
+  const handleToggleChapter = async (dayNumber: number, seq: number, isRead: boolean) => {
+    if (!readingPlan) return;
+    const isToday = todayReading?.dayNumber === dayNumber;
+    const result = await setPlanChapterRead(readingPlan.id, dayNumber, seq, isRead);
+    loadPlanData();
+    if (isRead && result.dayComplete) {
+      if (isToday) {
+        Alert.alert('Congratulations! 🎉', "Every chapter of today's reading is done. Keep it up.");
+      } else {
+        Alert.alert('Day complete', `Every chapter of day ${dayNumber} is read.`);
+      }
+    }
+  };
+
   const handleCancelPlan = () => {
     if (!readingPlan) return;
     Alert.alert(
@@ -162,6 +177,7 @@ export default function PlansScreen() {
           upcomingDays={upcomingDays}
           onStartPlan={handleStartPlan}
           onCompleteDay={handleCompletePlanDay}
+          onToggleChapter={handleToggleChapter}
           onCancelPlan={handleCancelPlan}
           onUpdateReminder={handleUpdatePlanReminder}
           onNavigateToReading={handleNavigateToReading}

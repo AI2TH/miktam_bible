@@ -4,6 +4,15 @@ import { CHAPTERS_PER_BOOK } from '../stores/readerStore';
 import { getBookName, getBookAbbreviation } from '../utils/bookTranslations';
 import { addDays, format, parseISO } from 'date-fns';
 import { syncReadingPlanNotification, cancelReadingPlanNotification } from './notificationService';
+import { BACKFILL_DAY_CHAPTER_SQL } from '../database/schema';
+import {
+  ChapterRef,
+  PlanDayChapter,
+  chaptersFromDayRange,
+  summarizeDayProgress,
+} from './readingPlanProgress';
+
+export type { ChapterRef, PlanDayChapter } from './readingPlanProgress';
 
 export type PlanType =
   | '1_year'
@@ -109,6 +118,24 @@ export interface ReadingPlanDay {
   completedAt?: string;
   bookName?: string;
   status: 'pending' | 'completed';
+  /** Chapters of this day in reading order (loaded by getAllPlanDays) */
+  chapters?: PlanDayChapter[];
+  /** Chapters read so far; equals chapterCount when the day is complete */
+  chaptersRead?: number;
+  chapterCount?: number;
+}
+
+type CustomScope = 'whole' | 'nt' | 'ot' | 'gospels' | 'wisdom';
+
+interface PlanScheduleItem {
+  dayNumber: number;
+  bookNumber: number;
+  startChapter: number;
+  endChapter: number;
+  scheduledDate: string;
+  readingLabel: string;
+  /** Every chapter of the day, across book boundaries and Navigators tracks */
+  chapters: ChapterRef[];
 }
 
 /** Get the currently active reading plan */
@@ -248,28 +275,56 @@ export async function getNextUncompletedReading(planId: string): Promise<Reading
   }
 }
 
-/** Get all scheduled days for an active reading plan */
+/**
+ * Get all scheduled days for a reading plan, each with its chapters and
+ * progress. A day counts as completed only when every chapter is read.
+ */
 export async function getAllPlanDays(planId: string): Promise<ReadingPlanDay[]> {
   try {
     const db = getDatabase();
+    await ensurePlanChapters(planId);
     const rows = await db.getAllAsync<any>(
       'SELECT * FROM reading_plan_days WHERE plan_id = ? ORDER BY day_number ASC',
       [planId]
     );
-    return rows.map((row) => ({
-      id: row.id,
-      planId: row.plan_id,
-      dayNumber: row.day_number,
-      bookNumber: row.book_number,
-      startChapter: row.start_chapter,
-      endChapter: row.end_chapter,
-      scheduledDate: row.scheduled_date,
-      readingLabel: row.reading_label,
-      isCompleted: row.is_completed === 1,
-      completedAt: row.completed_at,
-      bookName: getBookName(row.book_number),
-      status: row.is_completed === 1 ? 'completed' : 'pending',
-    }));
+    const chapterRows = await db.getAllAsync<any>(
+      'SELECT * FROM reading_plan_day_chapters WHERE plan_id = ? ORDER BY day_number ASC, seq ASC',
+      [planId]
+    );
+    const chaptersByDay = new Map<number, PlanDayChapter[]>();
+    for (const c of chapterRows) {
+      const list = chaptersByDay.get(c.day_number) ?? [];
+      list.push({
+        seq: c.seq,
+        bookNumber: c.book_number,
+        chapter: c.chapter,
+        isRead: c.is_read === 1,
+        readAt: c.read_at,
+      });
+      chaptersByDay.set(c.day_number, list);
+    }
+
+    return rows.map((row) => {
+      const chapters = chaptersByDay.get(row.day_number) ?? [];
+      const progress = summarizeDayProgress(chapters, row.is_completed === 1);
+      return {
+        id: row.id,
+        planId: row.plan_id,
+        dayNumber: row.day_number,
+        bookNumber: row.book_number,
+        startChapter: row.start_chapter,
+        endChapter: row.end_chapter,
+        scheduledDate: row.scheduled_date,
+        readingLabel: row.reading_label,
+        isCompleted: progress.isComplete,
+        completedAt: row.completed_at,
+        bookName: getBookName(row.book_number),
+        status: progress.isComplete ? 'completed' : 'pending',
+        chapters,
+        chaptersRead: progress.read,
+        chapterCount: progress.total,
+      };
+    });
   } catch (e) {
     console.error('[readingPlanService] Failed to get all plan days:', e);
     return [];
@@ -346,24 +401,10 @@ export function generatePlanSchedule(
   planType: PlanType,
   startDateStr: string,
   customDays?: number,
-  customScope?: 'whole' | 'nt' | 'ot' | 'gospels' | 'wisdom'
-): {
-  dayNumber: number;
-  bookNumber: number;
-  startChapter: number;
-  endChapter: number;
-  scheduledDate: string;
-  readingLabel: string;
-}[] {
+  customScope?: CustomScope
+): PlanScheduleItem[] {
   const baseDate = parseISO(startDateStr);
-  const schedule: {
-    dayNumber: number;
-    bookNumber: number;
-    startChapter: number;
-    endChapter: number;
-    scheduledDate: string;
-    readingLabel: string;
-  }[] = [];
+  const schedule: PlanScheduleItem[] = [];
 
   // ==========================================
   // CASE 1: Navigators 4-Track Discipleship Plan
@@ -416,6 +457,12 @@ export function generatePlanSchedule(
         endChapter: gFirst.chapter,
         scheduledDate,
         readingLabel,
+        chapters: [
+          gFirst,
+          ...lawHistory.slice(lStart, lEnd + 1),
+          ...wisdom.slice(wStart, wEnd + 1),
+          ...epistles.slice(eStart, eEnd + 1),
+        ],
       });
     }
 
@@ -477,6 +524,7 @@ export function generatePlanSchedule(
       endChapter: endChap,
       scheduledDate,
       readingLabel,
+      chapters: allChapters.slice(startIdx, safeEndIdx + 1),
     });
   }
 
@@ -554,7 +602,9 @@ export async function startReadingPlan(
         ]
       );
     }
+    await insertDayChapters(planId, schedule);
   });
+  checkedChapterPlans.add(planId);
 
   // Synchronize notifications dynamically
   await syncReadingPlanNotification(planId);
@@ -586,6 +636,14 @@ export async function completeDayReading(planId: string, dayNumber: number): Pro
     [now, planId, dayNumber]
   );
 
+  // Marking the whole day done marks every chapter of it read
+  await db.runAsync(
+    `UPDATE reading_plan_day_chapters
+     SET is_read = 1, read_at = COALESCE(read_at, ?)
+     WHERE plan_id = ? AND day_number = ?`,
+    [now, planId, dayNumber]
+  );
+
   // current_day is the plan day scheduled for today. Catching up on a missed
   // day or reading ahead must not move it (it used to become dayNumber + 1).
   await db.runAsync(
@@ -599,6 +657,157 @@ export async function completeDayReading(planId: string, dayNumber: number): Pro
 
   // Synchronize dynamic notifications (cancels pending for today, schedules tomorrow with Day X+1)
   await syncReadingPlanNotification(planId);
+}
+
+/**
+ * Mark one chapter of a plan day read or unread. The day becomes complete when
+ * its last chapter is read (which also cancels the rest of that day's
+ * reminders), and incomplete again if a chapter is unmarked.
+ * Returns whether the day is now complete.
+ */
+export async function setPlanChapterRead(
+  planId: string,
+  dayNumber: number,
+  seq: number,
+  isRead: boolean
+): Promise<{ dayComplete: boolean; read: number; total: number }> {
+  const db = getDatabase();
+  const now = new Date().toISOString();
+
+  await db.runAsync(
+    `UPDATE reading_plan_day_chapters
+     SET is_read = ?, read_at = CASE WHEN ? = 1 THEN COALESCE(read_at, ?) ELSE NULL END
+     WHERE plan_id = ? AND day_number = ? AND seq = ?`,
+    [isRead ? 1 : 0, isRead ? 1 : 0, now, planId, dayNumber, seq]
+  );
+
+  const counts = await db.getFirstAsync<{ total: number; read: number }>(
+    `SELECT COUNT(*) AS total, COALESCE(SUM(is_read), 0) AS read
+     FROM reading_plan_day_chapters WHERE plan_id = ? AND day_number = ?`,
+    [planId, dayNumber]
+  );
+  const total = counts?.total ?? 0;
+  const read = counts?.read ?? 0;
+  const dayComplete = total > 0 && read === total;
+
+  await db.runAsync(
+    `UPDATE reading_plan_days
+     SET is_completed = ?, completed_at = CASE WHEN ? = 1 THEN COALESCE(completed_at, ?) ELSE NULL END
+     WHERE plan_id = ? AND day_number = ?`,
+    [dayComplete ? 1 : 0, dayComplete ? 1 : 0, now, planId, dayNumber]
+  );
+
+  // Re-sync reminders: a day that just became complete gets its remaining
+  // reminders cancelled; partial progress updates the reminder text.
+  await syncReadingPlanNotification(planId);
+
+  return { dayComplete, read, total };
+}
+
+/** Plans whose chapter rows were already checked this session */
+const checkedChapterPlans = new Set<string>();
+
+async function insertDayChapters(planId: string, schedule: PlanScheduleItem[]): Promise<void> {
+  const db = getDatabase();
+  const stmt = await db.prepareAsync(
+    `INSERT OR IGNORE INTO reading_plan_day_chapters
+       (plan_id, day_number, seq, book_number, chapter, is_read)
+     VALUES (?, ?, ?, ?, ?, 0)`
+  );
+  try {
+    for (const item of schedule) {
+      for (let seq = 0; seq < item.chapters.length; seq++) {
+        const c = item.chapters[seq];
+        await stmt.executeAsync([planId, item.dayNumber, seq, c.bookNumber, c.chapter]);
+      }
+    }
+  } finally {
+    await stmt.finalizeAsync();
+  }
+}
+
+/**
+ * Plans created before per-chapter progress have no chapter rows. Rebuild each
+ * day's chapter list from the plan's schedule (trying every custom scope and
+ * keeping only days whose label still matches), or from the book and chapter
+ * range saved on the day. Completed days get all their chapters marked read.
+ */
+export async function ensurePlanChapters(planId: string): Promise<void> {
+  if (checkedChapterPlans.has(planId)) return;
+  const db = getDatabase();
+  try {
+    const existing = await db.getFirstAsync<{ n: number }>(
+      'SELECT COUNT(*) AS n FROM reading_plan_day_chapters WHERE plan_id = ?',
+      [planId]
+    );
+    if ((existing?.n ?? 0) > 0) {
+      checkedChapterPlans.add(planId);
+      return;
+    }
+
+    const plan = await db.getFirstAsync<any>('SELECT * FROM reading_plans WHERE id = ?', [planId]);
+    const days = await db.getAllAsync<any>(
+      'SELECT day_number, book_number, start_chapter, end_chapter, reading_label FROM reading_plan_days WHERE plan_id = ?',
+      [planId]
+    );
+    if (!plan || days.length === 0) return;
+
+    const regenerated = regenerateDayChapters(plan, days);
+
+    await db.withTransactionAsync(async () => {
+      for (const day of days) {
+        const chapters =
+          regenerated.get(day.day_number) ??
+          chaptersFromDayRange(day.book_number, day.start_chapter, day.end_chapter);
+        for (let seq = 0; seq < chapters.length; seq++) {
+          await db.runAsync(BACKFILL_DAY_CHAPTER_SQL, [
+            seq,
+            chapters[seq].bookNumber,
+            chapters[seq].chapter,
+            planId,
+            day.day_number,
+          ]);
+        }
+      }
+    });
+    checkedChapterPlans.add(planId);
+  } catch (e) {
+    console.warn('[readingPlanService] Could not add chapter rows for plan', planId, e);
+  }
+}
+
+/** Chapters per day from the plan's own schedule, for days whose label still matches */
+function regenerateDayChapters(
+  plan: { plan_type: PlanType; start_date: string; duration_days: number },
+  days: { day_number: number; book_number: number; start_chapter: number; reading_label: string | null }[]
+): Map<number, ChapterRef[]> {
+  const scopes: (CustomScope | undefined)[] =
+    plan.plan_type === 'custom' ? ['whole', 'nt', 'ot', 'gospels', 'wisdom'] : [undefined];
+
+  let best = new Map<number, ChapterRef[]>();
+  for (const scope of scopes) {
+    let schedule: PlanScheduleItem[];
+    try {
+      schedule = generatePlanSchedule(plan.plan_type, plan.start_date, plan.duration_days, scope);
+    } catch {
+      continue;
+    }
+    const byDay = new Map(schedule.map((s) => [s.dayNumber, s]));
+    const matched = new Map<number, ChapterRef[]>();
+    for (const day of days) {
+      const item = byDay.get(day.day_number);
+      if (
+        item &&
+        item.readingLabel === day.reading_label &&
+        item.bookNumber === day.book_number &&
+        item.startChapter === day.start_chapter
+      ) {
+        matched.set(day.day_number, item.chapters);
+      }
+    }
+    if (matched.size > best.size) best = matched;
+  }
+  return best;
 }
 
 /** Cancel / Stop current reading plan */

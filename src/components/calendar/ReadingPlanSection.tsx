@@ -23,6 +23,8 @@ import {
   getSchedulePreview,
   getAllPlanDays,
 } from '../../services/readingPlanService';
+import { firstUnreadChapter, formatDayProgress } from '../../services/readingPlanProgress';
+import { getBookAbbreviation } from '../../utils/bookTranslations';
 
 interface ReadingPlanSectionProps {
   plan: ReadingPlan | null;
@@ -43,6 +45,8 @@ interface ReadingPlanSectionProps {
     }
   ) => Promise<void>;
   onCompleteDay: (dayNumber: number) => Promise<void>;
+  /** Mark one chapter of a day read or unread (seq = position within the day) */
+  onToggleChapter: (dayNumber: number, seq: number, isRead: boolean) => Promise<void>;
   onCancelPlan: () => void | Promise<void>;
   onUpdateReminder: (enabled: boolean, time: string) => Promise<void>;
   onNavigateToReading: (bookNumber: number, chapter: number) => void;
@@ -266,17 +270,85 @@ function formatPlanDate(dateKey?: string): string | null {
 /** Number of pending days shown before "Show all" */
 const PENDING_PREVIEW_COUNT = 3;
 
+const DONE_GREEN = '#4E9F3D';
+const PENDING_AMBER = '#E5A93C';
+
+/** Where "Read" opens: the first chapter of the day not read yet */
+function readTarget(day: ReadingPlanDay): { bookNumber: number; chapter: number } {
+  const next = day.chapters && day.chapters.length > 0 ? firstUnreadChapter(day.chapters) : null;
+  return next ?? { bookNumber: day.bookNumber, chapter: day.startChapter };
+}
+
+/** "1 of 3 read" when the day has several chapters, else null */
+function progressLabel(day: ReadingPlanDay): string | null {
+  if (!day.chapterCount || day.chapterCount < 2) return null;
+  return formatDayProgress({ read: day.chaptersRead ?? 0, total: day.chapterCount });
+}
+
+/** One chip per chapter of a day; tapping a chip marks that chapter read or unread */
+function ChapterChips({
+  day,
+  onToggle,
+}: {
+  day: ReadingPlanDay;
+  onToggle: (seq: number, isRead: boolean) => void;
+}) {
+  const { colors } = useTheme();
+  if (!day.chapters || day.chapters.length < 2) return null;
+  return (
+    <View style={styles.chapterChipRow}>
+      {day.chapters.map((c) => {
+        const read = day.isCompleted || c.isRead;
+        const name = `${getBookAbbreviation(c.bookNumber)} ${c.chapter}`;
+        return (
+          <TouchableOpacity
+            key={c.seq}
+            onPress={() => onToggle(c.seq, !read)}
+            style={[
+              styles.chapterChip,
+              {
+                backgroundColor: read ? DONE_GREEN + '20' : colors.surfaceElevated,
+                borderColor: read ? DONE_GREEN : colors.border,
+              },
+            ]}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: read }}
+            accessibilityLabel={`${name}, ${read ? 'read' : 'not read'}`}
+            hitSlop={{ top: 4, bottom: 4, left: 2, right: 2 }}
+          >
+            <Ionicons
+              name={read ? 'checkmark-circle' : 'ellipse-outline'}
+              size={14}
+              color={read ? DONE_GREEN : colors.textTertiary}
+            />
+            <Text
+              variant="caption"
+              style={{ fontWeight: '600', color: read ? DONE_GREEN : colors.textPrimary }}
+            >
+              {name}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
 interface PlanDayRowProps {
   day: ReadingPlanDay;
   onRead: () => void;
   onMarkDone: () => void;
+  onToggleChapter: (seq: number, isRead: boolean) => void;
 }
 
 /** One plan day: day number, date, passage, and Read / Done actions */
-function PlanDayRow({ day, onRead, onMarkDone }: PlanDayRowProps) {
+function PlanDayRow({ day, onRead, onMarkDone, onToggleChapter }: PlanDayRowProps) {
   const { colors } = useTheme();
+  const [showChapters, setShowChapters] = useState(false);
   const dateLabel = formatPlanDate(day.scheduledDate);
   const passage = day.readingLabel || `${day.bookName} ${day.startChapter}`;
+  const progress = progressLabel(day);
+  const partial = !day.isCompleted && (day.chaptersRead ?? 0) > 0;
 
   return (
     <View
@@ -285,6 +357,7 @@ function PlanDayRow({ day, onRead, onMarkDone }: PlanDayRowProps) {
         {
           backgroundColor: colors.surface,
           borderColor: day.isCompleted ? '#4E9F3D50' : colors.border,
+          flexWrap: 'wrap',
         },
       ]}
     >
@@ -304,6 +377,29 @@ function PlanDayRow({ day, onRead, onMarkDone }: PlanDayRowProps) {
         <Text variant="body" style={{ fontWeight: '600', marginTop: 2 }}>
           {passage}
         </Text>
+        {progress && (
+          <TouchableOpacity
+            onPress={() => setShowChapters((v) => !v)}
+            style={styles.progressToggle}
+            accessibilityRole="button"
+            accessibilityLabel={`${progress}. ${showChapters ? 'Hide' : 'Show'} chapters`}
+          >
+            <Text
+              variant="caption"
+              style={{
+                fontWeight: '700',
+                color: day.isCompleted ? DONE_GREEN : partial ? PENDING_AMBER : colors.textSecondary,
+              }}
+            >
+              {progress}
+            </Text>
+            <Ionicons
+              name={showChapters ? 'chevron-up' : 'chevron-down'}
+              size={12}
+              color={colors.textTertiary}
+            />
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={styles.dayRowActions}>
@@ -337,6 +433,12 @@ function PlanDayRow({ day, onRead, onMarkDone }: PlanDayRowProps) {
           </TouchableOpacity>
         )}
       </View>
+
+      {showChapters && (
+        <View style={{ width: '100%' }}>
+          <ChapterChips day={day} onToggle={onToggleChapter} />
+        </View>
+      )}
     </View>
   );
 }
@@ -348,6 +450,7 @@ export function ReadingPlanSection({
   upcomingDays = [],
   onStartPlan,
   onCompleteDay,
+  onToggleChapter,
   onCancelPlan,
   onUpdateReminder,
   onNavigateToReading,
@@ -609,7 +712,11 @@ export function ReadingPlanSection({
                       fontSize: 11,
                     }}
                   >
-                    {todayReading.isCompleted ? '✓ Completed' : '⏳ Pending'}
+                    {todayReading.isCompleted
+                      ? '✓ Completed'
+                      : progressLabel(todayReading) && (todayReading.chaptersRead ?? 0) > 0
+                      ? `⏳ ${progressLabel(todayReading)}`
+                      : '⏳ Pending'}
                   </Text>
                 </View>
               </View>
@@ -618,13 +725,27 @@ export function ReadingPlanSection({
                 {todayReading.readingLabel || `${todayReading.bookName} ${todayReading.startChapter}`}
               </Text>
 
+              {/* Each chapter of today's reading can be marked on its own */}
+              {progressLabel(todayReading) && (
+                <View style={{ marginBottom: 4 }}>
+                  <Text variant="caption" color="textSecondary" style={{ fontWeight: '600' }}>
+                    {progressLabel(todayReading)} • tap a chapter to mark it
+                  </Text>
+                  <ChapterChips
+                    day={todayReading}
+                    onToggle={(seq, isRead) => onToggleChapter(todayReading.dayNumber, seq, isRead)}
+                  />
+                </View>
+              )}
+
               {/* Actions for Today */}
               <View style={styles.actionRow}>
                 <Button
                   label="Read Now 📖"
-                  onPress={() =>
-                    onNavigateToReading(todayReading.bookNumber, todayReading.startChapter)
-                  }
+                  onPress={() => {
+                    const target = readTarget(todayReading);
+                    onNavigateToReading(target.bookNumber, target.chapter);
+                  }}
                   variant="primary"
                   style={{ flex: 1 }}
                 />
@@ -650,15 +771,19 @@ export function ReadingPlanSection({
                 </Text>
               </View>
               <Text variant="caption" color="textTertiary" style={styles.daySectionHint}>
-                Earlier days of this plan you haven't marked done.
+                Earlier days of this plan you haven't finished. Partly read days show how far you got.
               </Text>
               <View style={styles.dayList}>
                 {visiblePendingDays.map((day) => (
                   <PlanDayRow
                     key={day.id}
                     day={day}
-                    onRead={() => onNavigateToReading(day.bookNumber, day.startChapter)}
+                    onRead={() => {
+                      const target = readTarget(day);
+                      onNavigateToReading(target.bookNumber, target.chapter);
+                    }}
                     onMarkDone={() => onCompleteDay(day.dayNumber)}
+                    onToggleChapter={(seq, isRead) => onToggleChapter(day.dayNumber, seq, isRead)}
                   />
                 ))}
               </View>
@@ -693,8 +818,12 @@ export function ReadingPlanSection({
                   <PlanDayRow
                     key={day.id}
                     day={day}
-                    onRead={() => onNavigateToReading(day.bookNumber, day.startChapter)}
+                    onRead={() => {
+                      const target = readTarget(day);
+                      onNavigateToReading(target.bookNumber, target.chapter);
+                    }}
                     onMarkDone={() => onCompleteDay(day.dayNumber)}
+                    onToggleChapter={(seq, isRead) => onToggleChapter(day.dayNumber, seq, isRead)}
                   />
                 ))}
               </View>
@@ -1100,6 +1229,11 @@ export function ReadingPlanSection({
                     <Text variant="body" style={{ fontWeight: '600', marginTop: 2 }}>
                       {item.readingLabel}
                     </Text>
+                    {!item.isCompleted && (item.chaptersRead ?? 0) > 0 && progressLabel(item) && (
+                      <Text variant="caption" style={{ fontWeight: '700', color: PENDING_AMBER }}>
+                        {progressLabel(item)}
+                      </Text>
+                    )}
                   </View>
 
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -1107,7 +1241,8 @@ export function ReadingPlanSection({
                       style={[styles.smallActionBtn, { backgroundColor: colors.primary + '20' }]}
                       onPress={() => {
                         setScheduleExplorerVisible(false);
-                        onNavigateToReading(item.bookNumber, item.startChapter);
+                        const target = readTarget(item);
+                        onNavigateToReading(target.bookNumber, target.chapter);
                       }}
                     >
                       <Ionicons name="book-outline" size={14} color={colors.primary} />
@@ -1426,6 +1561,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 6,
+  },
+  progressToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+  chapterChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+  },
+  chapterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
   },
   doneCheck: {
     paddingHorizontal: 6,

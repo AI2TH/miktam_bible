@@ -2,7 +2,66 @@
  * All SQL statements to create the database tables.
  * Run in order — foreign keys depend on prior tables.
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
+
+/** Per-chapter progress for reading plan days (schema version 2) */
+export const READING_PLAN_DAY_CHAPTERS_SQL = `CREATE TABLE IF NOT EXISTS reading_plan_day_chapters (
+    plan_id         TEXT NOT NULL,
+    day_number      INTEGER NOT NULL,
+    seq             INTEGER NOT NULL,
+    book_number     INTEGER NOT NULL,
+    chapter         INTEGER NOT NULL,
+    is_read         INTEGER NOT NULL DEFAULT 0,
+    read_at         TEXT,
+    PRIMARY KEY (plan_id, day_number, seq)
+  )`;
+
+/**
+ * Adds one chapter row for an existing plan day. The read state is copied from
+ * the day, so a day that was already completed counts as fully read.
+ * Params: seq, book_number, chapter, plan_id, day_number.
+ */
+export const BACKFILL_DAY_CHAPTER_SQL = `INSERT OR IGNORE INTO reading_plan_day_chapters
+    (plan_id, day_number, seq, book_number, chapter, is_read, read_at)
+  SELECT plan_id, day_number, ?, ?, ?, is_completed,
+         CASE WHEN is_completed = 1 THEN completed_at END
+  FROM reading_plan_days WHERE plan_id = ? AND day_number = ?`;
+
+/** Every day of a plan with its chapter count and how many are read. Param: plan_id. */
+export const PLAN_DAYS_WITH_PROGRESS_SQL = `SELECT d.*,
+    COUNT(c.seq) AS chapter_count,
+    COALESCE(SUM(c.is_read), 0) AS chapters_read
+  FROM reading_plan_days d
+  LEFT JOIN reading_plan_day_chapters c
+    ON c.plan_id = d.plan_id AND c.day_number = d.day_number
+  WHERE d.plan_id = ?
+  GROUP BY d.id
+  ORDER BY d.day_number ASC`;
+
+export interface SchemaMigration {
+  /** user_version after this migration */
+  version: number;
+  description: string;
+  /** Columns added only when missing, so a fresh install (tables already current) is safe */
+  addColumns?: { table: string; column: string; definition: string }[];
+  /** Idempotent statements */
+  statements?: string[];
+}
+
+/**
+ * Migrations from the user_version stored in the database up to SCHEMA_VERSION.
+ * Run after CREATE_TABLES_SQL, in order. Every step must be safe to run twice.
+ */
+export const SCHEMA_MIGRATIONS: SchemaMigration[] = [
+  {
+    version: 2,
+    description: 'Per-chapter reading plan progress',
+    // The chapter rows of plans created before this version are added on first
+    // load by readingPlanService.ensurePlanChapters(), which needs the schedule
+    // generator; BACKFILL_DAY_CHAPTER_SQL copies each day's completion.
+    statements: [READING_PLAN_DAY_CHAPTERS_SQL],
+  },
+];
 
 export const CREATE_TABLES_SQL = [
   // =============================================
@@ -294,6 +353,10 @@ export const CREATE_TABLES_SQL = [
 
   `CREATE INDEX IF NOT EXISTS idx_reading_plan_days_date
     ON reading_plan_days(scheduled_date)`,
+
+  // One row per chapter of a plan day. A day is complete only when every chapter
+  // is read; reading_plan_days.is_completed is kept in step with these rows.
+  READING_PLAN_DAY_CHAPTERS_SQL,
 
   `CREATE TABLE IF NOT EXISTS reading_progress (
     id              TEXT PRIMARY KEY,
