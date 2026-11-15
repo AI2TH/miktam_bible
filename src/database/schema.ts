@@ -207,18 +207,14 @@ export const CREATE_TABLES_SQL = [
 
   // Register available AI models
   `INSERT OR IGNORE INTO ai_models (id, model_type, display_name, description, file_size_mb, ram_required_mb, download_url, version) VALUES
-    ('bibleslm-0.5b-q4', 'llm', 'Bible SmolLM2 135M', 'SmolLM2 135M parameters, Q4_K_M quantized (about 105 MB). Fast, uses minimal RAM.', 105, 200, 'https://huggingface.co/skalvinnathan/bible-smollm2/resolve/main/bible-q4km.gguf', '1.0.0'),
+    ('bible-smollm2-135m-q4', 'llm', 'Bible SmolLM2 135M', 'SmolLM2 135M parameters, Q4_K_M quantized (about 105 MB). Fast, uses minimal RAM.', 105, 200, 'https://huggingface.co/skalvinnathan/bible-smollm2/resolve/main/bible-q4km.gguf', '1.0.0'),
     ('whisper-base-en', 'whisper', 'Whisper Base (English)', 'Speech-to-text for voice recording transcription.', 140, 200, 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin', '1.0.0')`,
 
   // The 1.5B entry pointed at a placeholder URL that returns 401. Remove it from
   // existing databases (it can never have been downloaded).
   `DELETE FROM ai_models WHERE id = 'bibleslm-1.5b-q4' AND is_downloaded = 0`,
 
-  // The id 'bibleslm-0.5b-q4' is kept for compatibility (it names the file on disk);
-  // fix the label and description in existing databases.
-  `UPDATE ai_models
-     SET display_name = 'Bible SmolLM2 135M',
-         description = 'SmolLM2 135M parameters, Q4_K_M quantized (about 105 MB). Fast, uses minimal RAM.',
-         file_size_mb = 105
-   WHERE id = 'bibleslm-0.5b-q4'`,
+  // The 135M model used to be registered as 'bibleslm-0.5b-q4'. database.ts
+  // (migrateModelIds) renames its file on disk; drop the old row here.
+  `DELETE FROM ai_models WHERE id = 'bibleslm-0.5b-q4'`,
 ];

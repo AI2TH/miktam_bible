@@ -13,6 +13,7 @@ import {
 } from '../database/userSchema';
 import { GLOBAL_LANGUAGES, GLOBAL_BIBLE_VERSIONS } from '../database/globalBibleCatalog';
 import { SEED_DB, checkSeedChecksum, seedSourceCandidates } from '../database/seedManifest';
+import { LLM_MODEL_ID, renamedModelFile } from '../ai/modelCatalog';
 
 let db: SQLite.SQLiteDatabase | null = null;
 let isInitialized = false;
@@ -244,7 +245,8 @@ async function openAndPrepareDatabase(): Promise<SQLite.SQLiteDatabase> {
   // Populate all 2,456+ global languages and 3,823+ version combinations if not yet populated
   await populateGlobalBibleCatalog(database);
 
-  // Automatically sync local model files with database state
+  // Rename model files saved under old ids, then sync model files with database state
+  await migrateModelFiles();
   await syncLocalModels(database);
 
   // Cleanup any corrupted fallback downloads where non-KJV version received duplicate KJV verses
@@ -366,6 +368,31 @@ async function populateGlobalBibleCatalog(database: SQLite.SQLiteDatabase): Prom
 }
 
 /**
+ * Model files are named after the model id. Rename files saved under an id that
+ * has since changed (see MODEL_ID_RENAMES), so a downloaded model is not lost.
+ */
+async function migrateModelFiles(): Promise<void> {
+  const modelsDir = `${FileSystem.documentDirectory}models/`;
+  try {
+    const dirInfo = await FileSystem.getInfoAsync(modelsDir);
+    if (!dirInfo.exists) return;
+    for (const file of await FileSystem.readDirectoryAsync(modelsDir)) {
+      const renamed = renamedModelFile(file);
+      if (!renamed) continue;
+      const target = `${modelsDir}${renamed}`;
+      if ((await FileSystem.getInfoAsync(target)).exists) {
+        await FileSystem.deleteAsync(`${modelsDir}${file}`, { idempotent: true });
+      } else {
+        await FileSystem.moveAsync({ from: `${modelsDir}${file}`, to: target });
+      }
+      console.log(`[DB] Renamed model file ${file} -> ${renamed}`);
+    }
+  } catch (e) {
+    console.warn('[DB] Failed to rename model files:', e);
+  }
+}
+
+/**
  * Automatically find local GGUF/bin files in the models folder
  * and update their `is_downloaded` and `file_path` state in the database.
  */
@@ -378,7 +405,7 @@ async function syncLocalModels(database: SQLite.SQLiteDatabase): Promise<void> {
     }
 
     // Check if models exist in document directory
-    const liteModelPath = `${modelsDir}bibleslm-0.5b-q4.gguf`;
+    const liteModelPath = `${modelsDir}${LLM_MODEL_ID}.gguf`;
     const liteModelInfo = await FileSystem.getInfoAsync(liteModelPath);
     if (liteModelInfo.exists) {
       console.log(`[DB] Pre-packaged model found in document directory (size: ${liteModelInfo.size || 0} bytes)`);

@@ -4,6 +4,7 @@ import * as Device from 'expo-device';
 import type { AIModel, DeviceCapability, ModelDownloadProgress } from '../types/ai';
 import { releaseModel } from './llamaEngine';
 import { releaseWhisper } from './whisperEngine';
+import { isListedModel } from './modelCatalog';
 
 const MODELS_DIR = `${FileSystem.documentDirectory}models/`;
 
@@ -22,6 +23,11 @@ export async function getAvailableModels(): Promise<AIModel[]> {
   
   const models: AIModel[] = [];
   for (const r of rows) {
+    // Offer only models whose download URL was checked, plus any already on disk
+    if (!isListedModel(r)) {
+      const ext = r.model_type === 'whisper' ? '.bin' : '.gguf';
+      if (!(await FileSystem.getInfoAsync(`${MODELS_DIR}${r.id}${ext}`)).exists) continue;
+    }
     const ext = r.model_type === 'whisper' ? '.bin' : '.gguf';
     const expectedPath = `${MODELS_DIR}${r.id}${ext}`;
     const info = await FileSystem.getInfoAsync(expectedPath);

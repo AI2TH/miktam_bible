@@ -24,7 +24,7 @@ export interface ChatSession {
 }
 
 export interface AIModel {
-  id: string;                // 'bibleslm-0.5b-q4' (SmolLM2 135M; legacy id), 'whisper-base-en'
+  id: string;                // 'bible-smollm2-135m-q4' (SmolLM2 135M), 'whisper-base-en'
   modelType: 'llm' | 'whisper' | 'embeddings';
   displayName: string;       // 'Bible SmolLM2 135M'
   description: string;
