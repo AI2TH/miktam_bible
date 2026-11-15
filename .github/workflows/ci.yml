@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # node:sqlite (used by the tests) needs Node 22.13 or later
+          node-version: 22
+          cache: npm
+
+      # Peer dependencies must resolve without --legacy-peer-deps. Install
+      # scripts (native builds for sharp, better-sqlite3) are not needed to
+      # typecheck or run the tests.
+      - run: npm ci --ignore-scripts
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npm test
