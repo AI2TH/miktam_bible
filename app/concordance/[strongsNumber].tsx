@@ -1,7 +1,8 @@
 import React, { useEffect } from 'react';
 import { View, StyleSheet, FlatList, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams, router } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
+import { openChapterFromOverlay } from '../../src/utils/navigation';
 import { useTheme } from '../../src/theme';
 import { Header } from '../../src/components/shared/Header';
 import { Card } from '../../src/components/ui/Card';
@@ -28,10 +29,7 @@ export default function StrongsDetailScreen() {
 
   const handleSelectVerse = (bookNumber: number, chapter: number, verseNumber: number) => {
     navigateTo(bookNumber, chapter);
-    router.replace({
-      pathname: '/(tabs)/read/[book]/[chapter]',
-      params: { book: bookNumber.toString(), chapter: chapter.toString() },
-    });
+    openChapterFromOverlay(bookNumber, chapter);
   };
 
   return (

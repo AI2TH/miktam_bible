@@ -8,6 +8,7 @@ import { useNotes } from '../src/hooks/useNotes';
 import { useReaderStore } from '../src/stores/readerStore';
 import { getBookName } from '../src/utils/bookTranslations';
 import { router } from 'expo-router';
+import { openChapterFromOverlay } from '../src/utils/navigation';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../src/components/ui/Text';
 import { Card } from '../src/components/ui/Card';
@@ -20,10 +21,7 @@ export default function StudiesScreen() {
 
   const handleSelectVerse = (bookNumber: number, chapter: number, verseNumber: number | null) => {
     navigateTo(bookNumber, chapter);
-    router.replace({
-      pathname: '/(tabs)/read/[book]/[chapter]',
-      params: { book: bookNumber.toString(), chapter: chapter.toString() },
-    });
+    openChapterFromOverlay(bookNumber, chapter);
   };
 
   const handleDelete = (id: string) => {

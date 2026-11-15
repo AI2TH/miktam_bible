@@ -8,7 +8,8 @@ import { ChatInput } from '../src/components/chat/ChatInput';
 import { SuggestedPrompts } from '../src/components/chat/SuggestedPrompts';
 import { useChat } from '../src/hooks/useChat';
 import { useReaderStore } from '../src/stores/readerStore';
-import { router, useNavigation } from 'expo-router';
+import { useNavigation } from 'expo-router';
+import { openChapterFromOverlay } from '../src/utils/navigation';
 import { IconButton } from '../src/components/ui/IconButton';
 import { Text } from '../src/components/ui/Text';
 import { BottomSheet } from '../src/components/ui/BottomSheet';
@@ -111,10 +112,7 @@ export default function ChatScreen() {
 
   const handleTapCitation = (ref: VerseRef) => {
     navigateTo(ref.bookNumber, ref.chapter);
-    router.replace({
-      pathname: '/(tabs)/read/[book]/[chapter]',
-      params: { book: ref.bookNumber.toString(), chapter: ref.chapter.toString() },
-    });
+    openChapterFromOverlay(ref.bookNumber, ref.chapter);
   };
 
   // Check if at least one LLM model is downloaded

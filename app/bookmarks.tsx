@@ -9,6 +9,7 @@ import { useBookmarks } from '../src/hooks/useBookmarks';
 import { useReaderStore } from '../src/stores/readerStore';
 import { getBookName } from '../src/utils/bookTranslations';
 import { router } from 'expo-router';
+import { openChapterFromOverlay } from '../src/utils/navigation';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../src/components/ui/Text';
 
@@ -23,10 +24,7 @@ export default function BookmarksScreen() {
 
   const handleSelectVerse = (bookNumber: number, chapter: number, verseNumber: number) => {
     navigateTo(bookNumber, chapter);
-    router.replace({
-      pathname: '/(tabs)/read/[book]/[chapter]',
-      params: { book: bookNumber.toString(), chapter: chapter.toString() },
-    });
+    openChapterFromOverlay(bookNumber, chapter);
   };
 
   const handleDelete = (item: any) => {

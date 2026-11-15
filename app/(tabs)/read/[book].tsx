@@ -2,6 +2,7 @@ import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
+import { goBackOr } from '../../../src/utils/navigation';
 import { useTheme } from '../../../src/theme';
 import { Header } from '../../../src/components/shared/Header';
 import { ChapterGrid } from '../../../src/components/scripture/ChapterGrid';
@@ -38,7 +39,7 @@ export default function BookChaptersScreen() {
   };
 
   const handleBack = () => {
-    router.replace('/(tabs)/read');
+    goBackOr('/(tabs)/read');
   };
 
   return (
