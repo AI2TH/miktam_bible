@@ -1,11 +1,13 @@
 import * as SQLite from 'expo-sqlite';
 import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { CREATE_TABLES_SQL, SCHEMA_VERSION } from '../database/schema';
+import { CREATE_TABLES_SQL, SCHEMA_VERSION, createRecordingsTableSql } from '../database/schema';
 import { GLOBAL_LANGUAGES, GLOBAL_BIBLE_VERSIONS } from '../database/globalBibleCatalog';
 
 let db: SQLite.SQLiteDatabase | null = null;
 let isInitialized = false;
+// Shared by concurrent callers so seeding/copying and schema setup run only once
+let initPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
 let searchDb: SQLite.SQLiteDatabase | null = null;
 let isSearchInitialized = false;
@@ -65,9 +67,19 @@ async function copySourceDatabase(targetPath: string): Promise<boolean> {
   return false;
 }
 
-export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
-  if (db) return db;
+export function initDatabase(): Promise<SQLite.SQLiteDatabase> {
+  if (db && isInitialized) return Promise.resolve(db);
+  if (!initPromise) {
+    initPromise = openAndPrepareDatabase().catch((e) => {
+      // Allow a later retry instead of caching the failure forever
+      initPromise = null;
+      throw e;
+    });
+  }
+  return initPromise;
+}
 
+async function openAndPrepareDatabase(): Promise<SQLite.SQLiteDatabase> {
   const dbDir = `${FileSystem.documentDirectory}SQLite`;
   const dbPath = `${dbDir}/bible.db`;
 
@@ -105,18 +117,18 @@ export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
   }
 
   // Open database connection
-  db = await SQLite.openDatabaseAsync('bible.db');
+  const database = await SQLite.openDatabaseAsync('bible.db');
 
   // Fast non-blocking sanity check (<1ms)
   try {
-    await db.getFirstAsync('SELECT id FROM verses LIMIT 1;');
+    await database.getFirstAsync('SELECT id FROM verses LIMIT 1;');
     console.log('[DB] Database sanity check verified: healthy');
   } catch (checkErr) {
     console.warn('[DB] Database sanity check warning:', checkErr);
   }
 
   // Performance PRAGMAs
-  await db.execAsync(`
+  await database.execAsync(`
     PRAGMA journal_mode = WAL;
     PRAGMA synchronous = NORMAL;
     PRAGMA cache_size = 10000;
@@ -127,24 +139,27 @@ export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
   // Run all CREATE TABLE statements (failsafes to ensure local tables match schema if any changes are made)
   for (const sql of CREATE_TABLES_SQL) {
     try {
-      await db.execAsync(sql);
+      await database.execAsync(sql);
     } catch (e) {
       console.error('[DB] Error executing schema statement:', sql, e);
     }
   }
 
+  // Rebuild tables whose constraints predate the current schema
+  await migrateRecordingsStatusConstraint(database);
+
   // Set schema version
-  await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  await database.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
 
   // Populate all 2,456+ global languages and 3,823+ version combinations if not yet populated
-  await populateGlobalBibleCatalog(db);
+  await populateGlobalBibleCatalog(database);
 
   // Automatically sync local model files with database state
-  await syncLocalModels(db);
+  await syncLocalModels(database);
 
   // Cleanup any corrupted fallback downloads where non-KJV version received duplicate KJV verses
   try {
-    const corrupted = await db.getAllAsync<{ id: string }>(
+    const corrupted = await database.getAllAsync<{ id: string }>(
       `SELECT DISTINCT bv.id FROM bible_versions bv
        JOIN verses v ON LOWER(bv.id) = LOWER(v.version_id)
        WHERE LOWER(bv.id) NOT IN ('kjv', 'akjv', 'ukjv', 'rnkjv', 'kjva', 'kjvpce')
@@ -154,15 +169,15 @@ export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
     );
     for (const row of corrupted) {
       console.log(`[DB] Cleaning up corrupted fallback version: ${row.id}`);
-      await db.runAsync('DELETE FROM verses WHERE LOWER(version_id) = ?', [row.id.toLowerCase()]);
-      await db.runAsync('DELETE FROM books WHERE LOWER(version_id) = ?', [row.id.toLowerCase()]);
-      await db.runAsync('UPDATE bible_versions SET is_downloaded = 0, download_date = NULL WHERE LOWER(id) = ?', [row.id.toLowerCase()]);
+      await database.runAsync('DELETE FROM verses WHERE LOWER(version_id) = ?', [row.id.toLowerCase()]);
+      await database.runAsync('DELETE FROM books WHERE LOWER(version_id) = ?', [row.id.toLowerCase()]);
+      await database.runAsync('UPDATE bible_versions SET is_downloaded = 0, download_date = NULL WHERE LOWER(id) = ?', [row.id.toLowerCase()]);
     }
     // Also ensure aldhelm has no non-Psalms verses if previously seeded
-    await db.runAsync("DELETE FROM verses WHERE LOWER(version_id) = 'aldhelm' AND book_number != 19;");
+    await database.runAsync("DELETE FROM verses WHERE LOWER(version_id) = 'aldhelm' AND book_number != 19;");
 
     // Automatically correct any non-KJV versions incorrectly marked as downloaded if they have no verses
-    await db.runAsync(`
+    await database.runAsync(`
       UPDATE bible_versions
       SET is_downloaded = 0, download_date = NULL
       WHERE LOWER(id) NOT IN ('kjv')
@@ -174,8 +189,38 @@ export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
   }
 
   console.log('[DB] Database initialized, schema version:', SCHEMA_VERSION);
+  db = database;
   isInitialized = true;
-  return db;
+  return database;
+}
+
+/**
+ * Older databases (including the preseeded bible.db) were created with a CHECK
+ * constraint that rejects transcription_status = 'needs_model'. SQLite cannot
+ * alter a CHECK constraint, so copy the rows into a table with the current DDL.
+ */
+async function migrateRecordingsStatusConstraint(database: SQLite.SQLiteDatabase): Promise<void> {
+  try {
+    const row = await database.getFirstAsync<{ sql: string }>(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'recordings'"
+    );
+    if (!row || row.sql.includes('needs_model')) return;
+
+    console.log('[DB] Migrating recordings table to allow the needs_model status');
+    const columns =
+      'id, title, local_file_path, duration_secs, transcript, transcription_status, linked_book, linked_chapter, linked_verse, is_synced, created_at';
+    await database.withExclusiveTransactionAsync(async (txn) => {
+      await txn.execAsync('DROP TABLE IF EXISTS recordings_migrating');
+      await txn.execAsync(createRecordingsTableSql('recordings_migrating'));
+      await txn.execAsync(
+        `INSERT INTO recordings_migrating (${columns}) SELECT ${columns} FROM recordings`
+      );
+      await txn.execAsync('DROP TABLE recordings');
+      await txn.execAsync('ALTER TABLE recordings_migrating RENAME TO recordings');
+    });
+  } catch (e) {
+    console.error('[DB] Failed to migrate recordings table:', e);
+  }
 }
 
 /**
@@ -287,11 +332,8 @@ export function getDatabase(): SQLite.SQLiteDatabase {
  * connection (search, spell-check dictionary) do not block the main
  * connection used by the reader, bookmarks, etc.
  */
-export async function initSearchDatabase(): Promise<SQLite.SQLiteDatabase> {
-  if (db && isInitialized) {
-    return db;
-  }
-  return await initDatabase();
+export function initSearchDatabase(): Promise<SQLite.SQLiteDatabase> {
+  return initDatabase();
 }
 
 /**
@@ -317,6 +359,11 @@ export async function closeDatabase(): Promise<void> {
     await searchDb.closeAsync();
     searchDb = null;
     isSearchInitialized = false;
+  }
+  if (initPromise) {
+    // Wait for an in-flight init so we don't close a half-prepared connection
+    await initPromise.catch(() => {});
+    initPromise = null;
   }
   if (db) {
     await db.closeAsync();
