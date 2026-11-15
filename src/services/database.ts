@@ -12,6 +12,7 @@ import {
   type SqlExecutor,
 } from '../database/userSchema';
 import { GLOBAL_LANGUAGES, GLOBAL_BIBLE_VERSIONS } from '../database/globalBibleCatalog';
+import { SEED_DB, checkSeedChecksum, seedSourceCandidates } from '../database/seedManifest';
 
 let db: SQLite.SQLiteDatabase | null = null;
 let isInitialized = false;
@@ -29,20 +30,15 @@ let isSearchInitialized = false;
  * - Runs schema creation (no-op if tables exist)
  * - Returns the singleton database instance
  */
-// Minimum expected size for the initial KJV Bible database (~400MB uncompressed, at least 50MB)
-const MIN_VALID_DB_SIZE = 50 * 1024 * 1024;
-const SEEDED_DB_VERSION = '1.1.0';
+const MIN_VALID_DB_SIZE = SEED_DB.minSize;
+const SEEDED_DB_VERSION = SEED_DB.version;
 
 async function copySourceDatabase(targetPath: string): Promise<boolean> {
-  const possibleUris = [
-    'file:///sdcard/Download/bible.db',
-    'file:///sdcard/bible.db',
-    `${FileSystem.bundleDirectory || 'asset:/'}bible.db`,
-    'asset:/bible.db',
-    'asset:///bible.db'
-  ];
+  // /sdcard candidates exist only in development builds (any app can write there)
+  const possibleUris = seedSourceCandidates(__DEV__, FileSystem.bundleDirectory);
 
   for (const uri of possibleUris) {
+    const isSharedStorage = uri.startsWith('file:///sdcard');
     try {
       console.log('[DB] Checking source database candidate:', uri);
       const info = await FileSystem.getInfoAsync(uri);
@@ -60,15 +56,31 @@ async function copySourceDatabase(targetPath: string): Promise<boolean> {
         to: targetPath
       });
 
-      const newInfo = await FileSystem.getInfoAsync(targetPath);
+      const newInfo = await FileSystem.getInfoAsync(targetPath, { md5: !isSharedStorage && !!SEED_DB.md5 });
       const newSize = newInfo.exists && 'size' in newInfo ? (newInfo.size || 0) : 0;
-      if (newInfo.exists && newSize >= MIN_VALID_DB_SIZE) {
-        console.log(`[DB] Database successfully copied from ${uri} (size: ${newSize} bytes)`);
-        await AsyncStorage.setItem('seeded_bible_db_version', SEEDED_DB_VERSION);
-        return true;
-      } else {
+      if (!newInfo.exists || newSize < MIN_VALID_DB_SIZE) {
         console.warn(`[DB] Copied database is too small or truncated (${newSize} bytes). Trying next...`);
+        await FileSystem.deleteAsync(targetPath, { idempotent: true });
+        continue;
       }
+
+      // Verify the bundled seed against the manifest (dev /sdcard copies are test files)
+      if (!isSharedStorage) {
+        const md5 = newInfo.exists && 'md5' in newInfo ? newInfo.md5 : undefined;
+        const check = checkSeedChecksum(md5, SEED_DB.md5);
+        if (check === 'mismatch') {
+          console.error(`[DB] Seed checksum mismatch from ${uri} (got ${md5}, expected ${SEED_DB.md5}). Trying next...`);
+          await FileSystem.deleteAsync(targetPath, { idempotent: true });
+          continue;
+        }
+        if (check === 'unchecked') {
+          console.warn('[DB] Seed checksum not set in seedManifest.ts; copy accepted unchecked');
+        }
+      }
+
+      console.log(`[DB] Database successfully copied from ${uri} (size: ${newSize} bytes)`);
+      await AsyncStorage.setItem('seeded_bible_db_version', SEEDED_DB_VERSION);
+      return true;
     } catch (e) {
       console.warn(`[DB] Failed copying from candidate ${uri}:`, e);
     }
