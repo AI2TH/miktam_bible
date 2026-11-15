@@ -2,8 +2,9 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAudioRecorder, requestRecordingPermissionsAsync, RecordingOptions } from 'expo-audio';
 import { Platform } from 'react-native';
 import * as recordingService from '../services/recordingService';
-import { transcribeAudio, isWhisperLoaded, loadWhisperModel } from '../ai/whisperEngine';
+import { transcribeAudio, loadWhisperModel } from '../ai/whisperEngine';
 import { getDatabase, isDatabaseInitialized } from '../services/database';
+import type { Recording } from '../types/user';
 
 const RECORDING_OPTIONS_16KHZ_MONO: RecordingOptions = {
   isMeteringEnabled: true,
@@ -82,13 +83,11 @@ export function useRecorder() {
     }
   }, [recorder]);
 
-  const transcribeInBackground = useCallback(async (
-    recordId: string,
-    uri: string,
-    linkedBook: number | null = null,
-    linkedChapter: number | null = null,
-    linkedVerse: number | null = null
-  ) => {
+  /**
+   * Transcribe a saved memo. Without a downloaded Whisper model the memo is kept
+   * with status 'needs_model' and an empty transcript; nothing is invented.
+   */
+  const transcribeInBackground = useCallback(async (recordId: string, uri: string) => {
     if (mountedRef.current) setTranscribing(true);
     try {
       // 1. Check database for any downloaded Whisper model path
@@ -108,30 +107,43 @@ export function useRecorder() {
         console.warn('[useRecorder] Failed to query downloaded whisper model path:', e);
       }
 
-      // Ensure Whisper engine is initialized
-      if (!isWhisperLoaded()) {
-        await loadWhisperModel(whisperModelPath);
+      // Ensure Whisper engine is initialized (no-op if this model is already loaded)
+      const hasModel = await loadWhisperModel(whisperModelPath);
+      if (!hasModel) {
+        await recordingService.updateRecordingTranscript(recordId, '', 'needs_model');
+        return;
       }
 
       await recordingService.updateRecordingTranscript(recordId, '', 'processing');
 
       // 2. Perform transcription
-      const text = await transcribeAudio(uri, linkedBook, linkedChapter, linkedVerse);
+      const text = await transcribeAudio(uri);
 
       // 3. Save transcript to SQLite
       await recordingService.updateRecordingTranscript(recordId, text, 'done');
     } catch (err) {
       console.error('[useRecorder] Background transcription failed:', err);
-      await recordingService.updateRecordingTranscript(
-        recordId,
-        err instanceof Error ? err.message : 'Transcription failed',
-        'failed'
-      );
+      try {
+        await recordingService.updateRecordingTranscript(
+          recordId,
+          err instanceof Error ? err.message : 'Transcription failed',
+          'failed'
+        );
+      } catch (updateErr) {
+        console.error('[useRecorder] Failed to save transcription failure:', updateErr);
+      }
     } finally {
       // Guard: only update state if component is still mounted
       if (mountedRef.current) setTranscribing(false);
     }
   }, []);
+
+  /** Transcribe an existing memo, e.g. one saved as 'needs_model' before the model was downloaded */
+  const transcribeRecording = useCallback(
+    (recording: Pick<Recording, 'id' | 'localFilePath'>) =>
+      transcribeInBackground(recording.id, recording.localFilePath),
+    [transcribeInBackground]
+  );
 
   const stopRecording = useCallback(async (
     title: string,
@@ -169,7 +181,7 @@ export function useRecorder() {
       );
 
       // Trigger asynchronous transcription via Whisper
-      transcribeInBackground(record.id, uri, record.linkedBook, record.linkedChapter, record.linkedVerse);
+      transcribeInBackground(record.id, uri);
 
       return record;
     } catch (e) {
@@ -186,5 +198,6 @@ export function useRecorder() {
     transcribing,
     start: startRecording,
     stop: stopRecording,
+    transcribeRecording,
   };
 }

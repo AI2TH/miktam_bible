@@ -4,6 +4,27 @@
  */
 export const SCHEMA_VERSION = 1;
 
+/**
+ * DDL for the recordings table. Shared with the migration in database.ts that
+ * rebuilds older copies whose CHECK constraint predates 'needs_model'.
+ */
+export function createRecordingsTableSql(tableName: string): string {
+  return `CREATE TABLE IF NOT EXISTS ${tableName} (
+    id              TEXT PRIMARY KEY,
+    title           TEXT,
+    local_file_path TEXT NOT NULL,
+    duration_secs   INTEGER DEFAULT 0,
+    transcript      TEXT,
+    transcription_status TEXT DEFAULT 'pending'
+                    CHECK(transcription_status IN ('pending','processing','done','failed','needs_model')),
+    linked_book     INTEGER,
+    linked_chapter  INTEGER,
+    linked_verse    INTEGER,
+    is_synced       INTEGER DEFAULT 0,
+    created_at      TEXT DEFAULT (datetime('now'))
+  )`;
+}
+
 export const CREATE_TABLES_SQL = [
   // =============================================
   // BIBLE TEXT TABLES
@@ -201,20 +222,7 @@ export const CREATE_TABLES_SQL = [
     INSERT INTO notes_fts(rowid, content) VALUES (new.rowid, new.content);
   END`,
 
-  `CREATE TABLE IF NOT EXISTS recordings (
-    id              TEXT PRIMARY KEY,
-    title           TEXT,
-    local_file_path TEXT NOT NULL,
-    duration_secs   INTEGER DEFAULT 0,
-    transcript      TEXT,
-    transcription_status TEXT DEFAULT 'pending'
-                    CHECK(transcription_status IN ('pending','processing','done','failed')),
-    linked_book     INTEGER,
-    linked_chapter  INTEGER,
-    linked_verse    INTEGER,
-    is_synced       INTEGER DEFAULT 0,
-    created_at      TEXT DEFAULT (datetime('now'))
-  )`,
+  createRecordingsTableSql('recordings'),
 
   `CREATE TABLE IF NOT EXISTS verse_calendar (
     id              TEXT PRIMARY KEY,

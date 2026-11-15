@@ -3,9 +3,10 @@ import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { useTheme } from '../../theme';
 import { Text } from '../ui/Text';
 import { Card } from '../ui/Card';
+import type { Recording } from '../../types/user';
 
 interface TranscriptViewProps {
-  status: 'pending' | 'processing' | 'done' | 'failed';
+  status: Recording['transcriptionStatus'];
   transcript: string | null;
 }
 
@@ -31,7 +32,7 @@ export function TranscriptView({ status, transcript }: TranscriptViewProps) {
             }
             style={styles.statusText}
           >
-            {status.toUpperCase()}
+            {status === 'needs_model' ? 'NEEDS MODEL' : status.toUpperCase()}
           </Text>
         </View>
       </View>
@@ -45,6 +46,11 @@ export function TranscriptView({ status, transcript }: TranscriptViewProps) {
         {status === 'processing' && (
           <Text variant="bodySmall" color="textSecondary">
             Whisper is transcribing voice reflection locally...
+          </Text>
+        )}
+        {status === 'needs_model' && (
+          <Text variant="bodySmall" color="textSecondary">
+            Transcription needs the speech model (140 MB).
           </Text>
         )}
         {status === 'failed' && (

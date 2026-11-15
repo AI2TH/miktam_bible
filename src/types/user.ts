@@ -39,7 +39,8 @@ export interface Recording {
   localFilePath: string;      // file:///path/on/device.m4a
   durationSecs: number;
   transcript: string | null;
-  transcriptionStatus: 'pending' | 'processing' | 'done' | 'failed';
+  /** 'needs_model': saved without a transcript because the Whisper model is not downloaded */
+  transcriptionStatus: 'pending' | 'processing' | 'done' | 'failed' | 'needs_model';
   linkedBook: number | null;
   linkedChapter: number | null;
   linkedVerse: number | null;

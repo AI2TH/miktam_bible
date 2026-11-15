@@ -41,7 +41,7 @@ export async function addRecording(
 export async function updateRecordingTranscript(
   id: string,
   transcript: string,
-  status: 'processing' | 'done' | 'failed'
+  status: Recording['transcriptionStatus']
 ): Promise<void> {
   const db = getDatabase();
   await db.runAsync(

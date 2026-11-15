@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, FlatList, TextInput, TouchableOpacity, Alert } from 'react-native';
+import { View, StyleSheet, FlatList, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../src/theme';
 import { Header } from '../src/components/shared/Header';
@@ -18,11 +18,13 @@ import { getBookName } from '../src/utils/bookTranslations';
 import { BottomSheet } from '../src/components/ui/BottomSheet';
 import { format } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
+import { getAvailableModels, downloadModel } from '../src/ai/modelManager';
+import type { AIModel } from '../src/types/ai';
 
 export default function RecordingsScreen() {
   const { colors, spacing, borderRadius } = useTheme();
   const { currentBookNumber, currentChapter, selectedVerseNumber, currentVersionId } = useReaderStore();
-  const { isRecording, durationSecs, transcribing, start, stop } = useRecorder();
+  const { isRecording, durationSecs, transcribing, start, stop, transcribeRecording } = useRecorder();
 
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [title, setTitle] = useState('');
@@ -49,9 +51,48 @@ export default function RecordingsScreen() {
     }
   };
 
+  // Speech (Whisper) model state, for memos saved as 'needs_model'
+  const [whisperModel, setWhisperModel] = useState<AIModel | null>(null);
+  const [whisperDownloadPct, setWhisperDownloadPct] = useState<number | null>(null);
+
+  const loadWhisperModelInfo = async () => {
+    try {
+      const models = await getAvailableModels();
+      setWhisperModel(models.find((m) => m.modelType === 'whisper') ?? null);
+    } catch (e) {
+      console.warn('[Recordings] Failed to load speech model info:', e);
+    }
+  };
+
   useEffect(() => {
     fetchList();
+    loadWhisperModelInfo();
   }, []);
+
+  const handleDownloadWhisper = async () => {
+    if (!whisperModel || whisperDownloadPct !== null) return;
+    try {
+      setWhisperDownloadPct(0);
+      await downloadModel(whisperModel.id, (prog) => setWhisperDownloadPct(prog.percentage));
+      await loadWhisperModelInfo();
+      Alert.alert('Speech model ready', 'Tap "Transcribe now" on a memo to transcribe it.');
+    } catch (e: any) {
+      console.error('[Recordings] Failed to download speech model:', e);
+      Alert.alert('Download Error', `Failed to download the speech model: ${e?.message || 'Unknown error'}`);
+    } finally {
+      setWhisperDownloadPct(null);
+    }
+  };
+
+  const handleTranscribeNow = (item: Recording) => {
+    // Show progress immediately; polling refreshes the list until it finishes
+    setRecordings((prev) =>
+      prev.map((r) => (r.id === item.id ? { ...r, transcriptionStatus: 'processing' } : r))
+    );
+    transcribeRecording(item).finally(fetchList);
+  };
+
+  const speechModelSizeMb = Math.round(whisperModel?.fileSizeMb ?? 140);
 
   // Poll list status periodically if any recording is transcribing/pending
   const hasUnfinished = recordings.some(
@@ -93,7 +134,12 @@ export default function RecordingsScreen() {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
-          await recordingService.deleteRecording(id);
+          try {
+            await recordingService.deleteRecording(id);
+          } catch (e) {
+            console.error('[Recordings] Failed to delete memo:', e);
+            Alert.alert('Error', 'Failed to delete the memo.');
+          }
           fetchList();
         },
       },
@@ -218,6 +264,41 @@ export default function RecordingsScreen() {
                     <Text variant="bodySmall" color="textTertiary" style={{ fontStyle: 'italic' }}>
                       Whisper is transcribing your audio locally on-device...
                     </Text>
+                  ) : item.transcriptionStatus === 'needs_model' ? (
+                    <View>
+                      <Text variant="bodySmall" color="textTertiary" style={{ fontStyle: 'italic' }}>
+                        Transcription needs the speech model ({speechModelSizeMb} MB).
+                      </Text>
+                      {whisperDownloadPct !== null ? (
+                        <View style={[styles.inlineAction, { marginTop: spacing.sm }]}>
+                          <ActivityIndicator size="small" color={colors.primary} />
+                          <Text variant="caption" color="primary" style={{ fontWeight: 'bold', marginLeft: 6 }}>
+                            Downloading {whisperDownloadPct}%
+                          </Text>
+                        </View>
+                      ) : whisperModel?.isDownloaded ? (
+                        <TouchableOpacity
+                          onPress={() => handleTranscribeNow(item)}
+                          disabled={transcribing}
+                          style={[styles.inlineAction, styles.actionButton, { backgroundColor: colors.primary, marginTop: spacing.sm, opacity: transcribing ? 0.6 : 1 }]}
+                        >
+                          <Ionicons name="text-outline" size={14} color={colors.textInverse} />
+                          <Text variant="caption" color="inverse" style={{ fontWeight: 'bold', marginLeft: 4 }}>
+                            Transcribe now
+                          </Text>
+                        </TouchableOpacity>
+                      ) : whisperModel ? (
+                        <TouchableOpacity
+                          onPress={handleDownloadWhisper}
+                          style={[styles.inlineAction, styles.actionButton, { backgroundColor: colors.primary, marginTop: spacing.sm }]}
+                        >
+                          <Ionicons name="download-outline" size={14} color={colors.textInverse} />
+                          <Text variant="caption" color="inverse" style={{ fontWeight: 'bold', marginLeft: 4 }}>
+                            Download speech model
+                          </Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
                   ) : item.transcriptionStatus === 'failed' ? (
                     <Text variant="bodySmall" color="error" style={{ fontStyle: 'italic' }}>
                       Failed to transcribe: {item.transcript || 'Unknown error'}
@@ -345,6 +426,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  inlineAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+  },
+  actionButton: {
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
   linkBadge: {
     marginTop: 4,
