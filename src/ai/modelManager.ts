@@ -2,6 +2,8 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { getDatabase } from '../services/database';
 import * as Device from 'expo-device';
 import type { AIModel, DeviceCapability, ModelDownloadProgress } from '../types/ai';
+import { releaseModel } from './llamaEngine';
+import { releaseWhisper } from './whisperEngine';
 
 const MODELS_DIR = `${FileSystem.documentDirectory}models/`;
 
@@ -118,8 +120,14 @@ export async function downloadModel(
 export async function deleteModel(modelId: string): Promise<void> {
   const db = getDatabase();
   const model = await db.getFirstAsync<any>(
-    'SELECT file_path FROM ai_models WHERE id = ?', [modelId]
+    'SELECT file_path, model_type FROM ai_models WHERE id = ?', [modelId]
   );
+  // Unload the engine first so it does not keep using a file we are about to delete
+  if (model?.model_type === 'llm') {
+    await releaseModel();
+  } else if (model?.model_type === 'whisper') {
+    await releaseWhisper();
+  }
   if (model?.file_path) {
     await FileSystem.deleteAsync(model.file_path, { idempotent: true });
   }

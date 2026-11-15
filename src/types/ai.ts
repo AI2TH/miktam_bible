@@ -3,7 +3,12 @@ import type { VerseRef, SearchResult } from './bible';
 export interface ChatMessage {
   id: string;
   sessionId: string;
-  role: 'user' | 'assistant';
+  /**
+   * 'assistant' is used only for real model output. 'notice' is an app-generated
+   * message (for example, retrieved verses shown because no model is downloaded)
+   * and must never be presented as a model answer.
+   */
+  role: 'user' | 'assistant' | 'notice';
   content: string;
   citedVerses: VerseRef[];    // Parsed verse references in response
   versionId: string;
@@ -51,11 +56,13 @@ export interface RAGResult {
 
 /** Chunk emitted during streaming RAG response */
 export interface RAGStreamChunk {
-  type: 'token' | 'citation' | 'done' | 'error';
+  type: 'token' | 'citation' | 'done' | 'error' | 'model_missing';
   token?: string;            // Next generated token
   citation?: VerseRef;       // Detected verse reference
   fullText?: string;         // Complete text so far
   error?: string;
+  /** For 'model_missing': the retrieved verses (no model output) */
+  citedVerses?: VerseRef[];
 }
 
 /** Device capability assessment */

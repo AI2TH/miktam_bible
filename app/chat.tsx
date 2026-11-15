@@ -182,7 +182,7 @@ export default function ChatScreen() {
                   <View style={[styles.warningBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                     <Ionicons name="information-circle-outline" size={18} color={colors.primary} />
                     <Text variant="caption" color="textSecondary" style={{ flex: 1, marginLeft: 6 }}>
-                      No GGUF AI model downloaded yet. The assistant will operate in <Text variant="caption" style={{ fontWeight: 'bold', color: colors.primary }}>mock/fallback offline study mode</Text>. Tap the chip icon in the top right to download a model for offline study!
+                      The AI model isn't downloaded yet. Until it is, questions return the most relevant verses only, with no AI answer. Tap the chip icon in the top right to download the model.
                     </Text>
                   </View>
                 )}
@@ -205,6 +205,7 @@ export default function ChatScreen() {
                   message={item}
                   onTapCitation={handleTapCitation}
                   isStreaming={item.id === 'streaming'}
+                  onDownloadModel={() => setShowModelManager(true)}
                 />
               )}
             />
@@ -245,7 +246,7 @@ export default function ChatScreen() {
               <Text variant="caption" color="textSecondary">
                 Total System RAM: <Text variant="caption" style={{ fontWeight: 'bold' }}>{capability.totalRamMb} MB</Text> {'\n'}
                 Recommended Tier: <Text variant="caption" style={{ fontWeight: 'bold', color: colors.primary }}>
-                  {capability.recommendedTier === 'full' ? 'BibleSLM 1.5B (Full)' : capability.recommendedTier === 'lite' ? 'SmolLM2 (Lite)' : 'FTS (No LLM)'}
+                  {capability.recommendedTier === 'none' ? 'Verse search only (no LLM)' : 'Bible SmolLM2 135M'}
                 </Text>
               </Text>
             </View>

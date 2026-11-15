@@ -1,10 +1,12 @@
-import { generateResponse, isModelLoaded, loadModel } from './llamaEngine';
+import { generateResponse, loadModel } from './llamaEngine';
 import { hybridSearch, searchFTS } from '../services/searchService';
 import { buildRAGPrompt, BIBLE_SYSTEM_PROMPT } from './prompts';
 import { getDatabase } from '../services/database';
 import type { RAGStreamChunk } from '../types/ai';
 import type { VerseRef, SearchResult } from '../types/bible';
 import { BOOK_NAMES } from '../utils/constants';
+import { getBookName } from '../utils/bookTranslations';
+import { buildModelMissingReply } from './modelMissingReply';
 
 /**
  * THE MAIN RAG PIPELINE — Ask a Bible question, get a streamed answer.
@@ -25,7 +27,8 @@ export async function askBible(
   versionId: string,
   onChunk: (chunk: RAGStreamChunk) => void
 ): Promise<void> {
-  console.log('[RAG] askBible initiated. Query:', query, 'Version:', versionId);
+  // Never log the query text: questions must stay private (release builds write console output to the device log).
+  if (__DEV__) console.log('[RAG] askBible initiated. Query length:', query.length, 'Version:', versionId);
   try {
     // Step 1: Check database for any downloaded LLM model path
     let modelPath = '';
@@ -37,18 +40,12 @@ export async function askBible(
       if (rows && rows.length > 0) {
         modelPath = rows[0].file_path;
       }
-      console.log('[RAG] Found LLM model path in database:', modelPath);
     } catch (e) {
       console.warn('[RAG] Failed to query downloaded LLM model path:', e);
     }
 
-    // Ensure LLM engine is initialized
-    if (!isModelLoaded()) {
-      console.log('[RAG] Model not loaded, loading from path:', modelPath);
-      await loadModel(modelPath);
-    } else {
-      console.log('[RAG] Model is already loaded.');
-    }
+    // Ensure LLM engine is initialized (no-op if this model is already loaded)
+    const hasModel = await loadModel(modelPath);
 
     // Step 2: Hybrid search for relevant verses
     // Note: For now, use empty embedding array. When MiniLM is integrated,
@@ -56,14 +53,21 @@ export async function askBible(
     const queryEmbedding: number[] = [];
     let searchResults: SearchResult[];
 
-    console.log('[RAG] Initiating hybrid search/FTS fallback...');
     if (queryEmbedding.length > 0) {
       searchResults = await hybridSearch(query, queryEmbedding, versionId, 10);
     } else {
       // Fallback: FTS-only search with synonym expansion and stop word filter enabled
       searchResults = await searchFTS(query, versionId, 10, true);
     }
-    console.log('[RAG] Search results found:', searchResults.length);
+    if (__DEV__) console.log('[RAG] Search results found:', searchResults.length);
+
+    // No model: return only the retrieved verses with a clear notice. Never generate
+    // or stream anything that could be mistaken for a model answer.
+    if (!hasModel) {
+      const reply = buildModelMissingReply(searchResults, (n) => getBookName(n, versionId));
+      onChunk({ type: 'model_missing', fullText: reply.content, citedVerses: reply.citedVerses });
+      return;
+    }
 
     const HF_BOOK_CODES: Record<number, string> = {
       1: "GEN", 2: "EXO", 3: "LEV", 4: "NUM", 5: "DEU",
@@ -91,11 +95,9 @@ export async function askBible(
       : "";
 
     const prompt = buildRAGPrompt(BIBLE_SYSTEM_PROMPT, versesContext, query);
-    console.log('[RAG] Built RAG prompt, length:', prompt.length);
 
     // Step 4: Stream response from BibleSLM
     let fullText = '';
-    console.log('[RAG] Calling generateResponse...');
     await generateResponse(
       prompt,
       (token) => {
@@ -104,11 +106,9 @@ export async function askBible(
       },
       512
     );
-    console.log('[RAG] Finished calling generateResponse. Text length:', fullText.length);
 
     // Step 5: Parse verse citations from response
     const citations = parseVerseCitations(fullText);
-    console.log('[RAG] Parsed citations:', citations);
     for (const citation of citations) {
       onChunk({ type: 'citation', citation });
     }

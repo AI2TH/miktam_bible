@@ -5,7 +5,7 @@ import { askBible } from '../ai/ragPipeline';
 import type { VerseRef } from '../types/bible';
 
 export function useChat() {
-  const { messages, isGenerating, streamingText, sendMessage, appendStreamToken, finishGeneration, cancelGeneration, clearChat } = useChatStore();
+  const { messages, isGenerating, streamingText, sendMessage, appendStreamToken, finishGeneration, addNotice, cancelGeneration, clearChat } = useChatStore();
   const { currentVersionId } = useReaderStore();
   const [error, setError] = useState<string | null>(null);
   const [citations, setCitations] = useState<VerseRef[]>([]);
@@ -39,6 +39,10 @@ export function useChat() {
           case 'done':
             finishGeneration(chunk.fullText || '', accumulatedCitations);
             break;
+          case 'model_missing':
+            // Retrieved verses only, shown as a notice — never as an assistant answer
+            addNotice(chunk.fullText || '', chunk.citedVerses || [], currentVersionId);
+            break;
           case 'error':
             setError(chunk.error || 'An error occurred during generation.');
             cancelGeneration();
@@ -49,7 +53,7 @@ export function useChat() {
       setError(e instanceof Error ? e.message : 'An error occurred during generation.');
       cancelGeneration();
     }
-  }, [isGenerating, currentVersionId, sendMessage, appendStreamToken, finishGeneration, cancelGeneration]);
+  }, [isGenerating, currentVersionId, sendMessage, appendStreamToken, finishGeneration, addNotice, cancelGeneration]);
 
   const clear = useCallback(() => {
     setError(null);

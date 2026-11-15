@@ -3,6 +3,7 @@ import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { useTheme } from '../../theme';
 import { Text } from '../ui/Text';
 import { Badge } from '../ui/Badge';
+import { Ionicons } from '@expo/vector-icons';
 import { BOOK_NAMES } from '../../utils/constants';
 import type { ChatMessage } from '../../types/ai';
 import type { VerseRef } from '../../types/bible';
@@ -11,15 +12,19 @@ interface ChatBubbleProps {
   message: ChatMessage;
   onTapCitation: (ref: VerseRef) => void;
   isStreaming?: boolean;
+  /** Shown on 'notice' messages that were produced because no model is downloaded */
+  onDownloadModel?: () => void;
 }
 
 export function ChatBubble({
   message,
   onTapCitation,
   isStreaming = false,
+  onDownloadModel,
 }: ChatBubbleProps) {
   const { colors, spacing, borderRadius } = useTheme();
   const isUser = message.role === 'user';
+  const isNotice = message.role === 'notice';
 
   return (
     <View
@@ -35,7 +40,9 @@ export function ChatBubble({
         style={[
           styles.bubble,
           {
-            backgroundColor: isUser ? colors.primary : colors.surface,
+            backgroundColor: isUser ? colors.primary : isNotice ? colors.surfaceMuted : colors.surface,
+            borderWidth: isNotice ? 1 : 0,
+            borderColor: colors.border,
             borderBottomRightRadius: isUser ? 2 : borderRadius.md,
             borderBottomLeftRadius: isUser ? borderRadius.md : 2,
             borderTopLeftRadius: borderRadius.md,
@@ -45,6 +52,15 @@ export function ChatBubble({
           },
         ]}
       >
+        {isNotice && (
+          <View style={[styles.noticeHeader, { marginBottom: spacing.sm }]}>
+            <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
+            <Text variant="caption" color="textSecondary" style={styles.noticeLabel}>
+              Search results (not an AI answer)
+            </Text>
+          </View>
+        )}
+
         {/* Message Text */}
         <Text
           variant="body"
@@ -72,6 +88,27 @@ export function ChatBubble({
               })}
             </View>
           </View>
+        )}
+
+        {isNotice && onDownloadModel && (
+          <TouchableOpacity
+            onPress={onDownloadModel}
+            style={[
+              styles.downloadBtn,
+              {
+                backgroundColor: colors.primary,
+                borderRadius: borderRadius.sm,
+                paddingHorizontal: spacing.sm,
+                paddingVertical: spacing.xs,
+                marginTop: spacing.md,
+              },
+            ]}
+          >
+            <Ionicons name="download-outline" size={14} color={colors.textInverse} />
+            <Text variant="caption" color="inverse" style={{ fontWeight: 'bold', marginLeft: 4 }}>
+              Download model
+            </Text>
+          </TouchableOpacity>
         )}
       </View>
     </View>
@@ -101,6 +138,19 @@ const styles = StyleSheet.create({
   citationLabel: {
     fontWeight: 'bold',
     marginBottom: 4,
+  },
+  noticeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  noticeLabel: {
+    fontWeight: 'bold',
+    marginLeft: 4,
+  },
+  downloadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
   },
   citationsList: {
     flexDirection: 'row',
