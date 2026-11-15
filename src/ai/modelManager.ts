@@ -143,9 +143,9 @@ export async function getDeviceCapability(): Promise<DeviceCapability> {
 
   let recommendedTier: 'full' | 'lite' | 'none';
   if (totalRamMb >= 3000) {
-    recommendedTier = 'full';  // BibleSLM-1.5B
+    recommendedTier = 'full';  // Bible SmolLM2 135M
   } else if (totalRamMb >= 2000) {
-    recommendedTier = 'lite';  // BibleSLM-0.5B
+    recommendedTier = 'lite';  // Bible SmolLM2 135M
   } else {
     recommendedTier = 'none';  // FTS-only search
   }

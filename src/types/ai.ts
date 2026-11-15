@@ -24,12 +24,12 @@ export interface ChatSession {
 }
 
 export interface AIModel {
-  id: string;                // 'bibleslm-1.5b-q4', 'bibleslm-0.5b-q4', 'whisper-base-en'
+  id: string;                // 'bibleslm-0.5b-q4' (SmolLM2 135M; legacy id), 'whisper-base-en'
   modelType: 'llm' | 'whisper' | 'embeddings';
-  displayName: string;       // 'BibleSLM 1.5B (Full)'
-  description: string;       // 'Best quality Bible study assistant'
-  fileSizeMb: number;        // 986
-  ramRequiredMb: number;     // 1200
+  displayName: string;       // 'Bible SmolLM2 135M'
+  description: string;
+  fileSizeMb: number;        // 105
+  ramRequiredMb: number;     // 200
   downloadUrl: string;       // HuggingFace URL
   filePath: string | null;   // Local path after download
   isDownloaded: boolean;

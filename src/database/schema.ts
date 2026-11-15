@@ -378,7 +378,18 @@ export const CREATE_TABLES_SQL = [
 
   // Register available AI models
   `INSERT OR IGNORE INTO ai_models (id, model_type, display_name, description, file_size_mb, ram_required_mb, download_url, version) VALUES
-    ('bibleslm-1.5b-q4', 'llm', 'BibleSLM 1.5B (Full)', 'Best quality Bible study assistant. Recommended for modern phones (3GB+ RAM).', 986, 1200, 'https://huggingface.co/yourname/BibleSLM-1.5B-GGUF/resolve/main/bibleslm-1.5b-q4_k_m.gguf', '1.0.0'),
-    ('bibleslm-0.5b-q4', 'llm', 'Bible SmolLM2 (Lite)', 'Lightweight Bible assistant. Very fast, uses minimal RAM.', 105, 200, 'https://huggingface.co/skalvinnathan/bible-smollm2/resolve/main/bible-q4km.gguf', '1.0.0'),
+    ('bibleslm-0.5b-q4', 'llm', 'Bible SmolLM2 135M', 'SmolLM2 135M parameters, Q4_K_M quantized (about 105 MB). Fast, uses minimal RAM.', 105, 200, 'https://huggingface.co/skalvinnathan/bible-smollm2/resolve/main/bible-q4km.gguf', '1.0.0'),
     ('whisper-base-en', 'whisper', 'Whisper Base (English)', 'Speech-to-text for voice recording transcription.', 140, 200, 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin', '1.0.0')`,
+
+  // The 1.5B entry pointed at a placeholder URL that returns 401. Remove it from
+  // existing databases (it can never have been downloaded).
+  `DELETE FROM ai_models WHERE id = 'bibleslm-1.5b-q4' AND is_downloaded = 0`,
+
+  // The id 'bibleslm-0.5b-q4' is kept for compatibility (it names the file on disk);
+  // fix the label and description in existing databases.
+  `UPDATE ai_models
+     SET display_name = 'Bible SmolLM2 135M',
+         description = 'SmolLM2 135M parameters, Q4_K_M quantized (about 105 MB). Fast, uses minimal RAM.',
+         file_size_mb = 105
+   WHERE id = 'bibleslm-0.5b-q4'`,
 ];
