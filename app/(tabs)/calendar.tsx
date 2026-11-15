@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, ScrollView, View, TouchableOpacity, TextInput, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../src/theme';
@@ -82,6 +82,11 @@ export default function CalendarScreen() {
   // Planner & Reading Plan State
   const todayStr = format(new Date(), 'yyyy-MM-dd');
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  // The focus listener outlives renders; it reads the current date from this ref
+  const selectedDateRef = useRef(selectedDate);
+  selectedDateRef.current = selectedDate;
+  // Only the latest planner load may set state (switching dates quickly)
+  const plannerRequestRef = useRef(0);
   const [todos, setTodos] = useState<CalendarTodo[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [todoDates, setTodoDates] = useState<string[]>([]);
@@ -94,20 +99,23 @@ export default function CalendarScreen() {
   const currentMonthStr = format(new Date(), 'yyyy-MM');
 
   const loadPlannerData = async (targetDate: string) => {
+    const requestId = ++plannerRequestRef.current;
+    const isLatest = () => requestId === plannerRequestRef.current;
     try {
       if (!isDatabaseInitialized()) return;
-      const dayTodos = await getTodosForDate(targetDate);
-      setTodos(dayTodos);
-      const dayEvents = await getEventsForDate(targetDate);
-      setEvents(dayEvents);
-
-      const dReading = await getReadingForDate(targetDate);
-      setDateReading(dReading);
-
       const today = new Date();
       const start = format(startOfMonth(today), 'yyyy-MM-dd');
       const end = format(endOfMonth(today), 'yyyy-MM-dd');
-      const badgeDates = await getCalendarBadgeDates(start, end);
+      const [dayTodos, dayEvents, dReading, badgeDates] = await Promise.all([
+        getTodosForDate(targetDate),
+        getEventsForDate(targetDate),
+        getReadingForDate(targetDate),
+        getCalendarBadgeDates(start, end),
+      ]);
+      if (!isLatest()) return;
+      setTodos(dayTodos);
+      setEvents(dayEvents);
+      setDateReading(dReading);
       setTodoDates(badgeDates.todoDates);
       setEventDates(badgeDates.eventDates);
     } catch (e) {
@@ -131,11 +139,17 @@ export default function CalendarScreen() {
     }
   };
 
-  const loadProgressAndPromises = async (active: boolean = true) => {
+  /**
+   * `signal` is shared by reference with the effect that started the load, so
+   * setting signal.cancelled on unmount stops every load still running
+   * (a boolean argument was copied and never changed).
+   */
+  const loadProgressAndPromises = async (signal: { cancelled: boolean } = { cancelled: false }) => {
+    const isActive = () => !signal.cancelled;
     try {
       let retries = 0;
       while (!isDatabaseInitialized() && retries < 15) {
-        if (!active) return;
+        if (!isActive()) return;
         await new Promise((resolve) => setTimeout(resolve, 300));
         retries++;
       }
@@ -147,44 +161,44 @@ export default function CalendarScreen() {
 
       // Load streak and stats
       const streakCount = await getStreakCount();
-      if (active) setStreak(streakCount);
+      if (isActive()) setStreak(streakCount);
 
       const currentStats = await getReadingStats();
-      if (active) setStats(currentStats);
+      if (isActive()) setStats(currentStats);
 
       const today = new Date();
       const start = format(startOfMonth(today), 'yyyy-MM-dd');
       const end = format(endOfMonth(today), 'yyyy-MM-dd');
       const dates = await getReadDatesInRange(start, end);
-      if (active) setReadDates(dates);
+      if (isActive()) setReadDates(dates);
 
       // Load Promise Verses
       const yrPromise = await getPromiseVerse('yearly', currentYear, currentVersionId);
-      if (active) setYearlyPromise(yrPromise);
+      if (isActive()) setYearlyPromise(yrPromise);
 
       const mthPromise = await getPromiseVerse('monthly', currentMonthStr, currentVersionId);
-      if (active) setMonthlyPromise(mthPromise);
+      if (isActive()) setMonthlyPromise(mthPromise);
 
       // Load Planner & Plan data
-      if (active) {
-        await loadPlannerData(selectedDate);
+      if (isActive()) {
+        await loadPlannerData(selectedDateRef.current);
         await loadPlanData();
       }
     } catch (e) {
       console.error('[Calendar] Failed to load progress or promise data:', e);
     } finally {
-      if (active) setLoading(false);
+      if (isActive()) setLoading(false);
     }
   };
 
   useEffect(() => {
-    let active = true;
-    loadProgressAndPromises(active);
+    const signal = { cancelled: false };
+    loadProgressAndPromises(signal);
     const unsubscribe = navigation.addListener('focus', () => {
-      loadProgressAndPromises(true);
+      loadProgressAndPromises(signal);
     });
     return () => {
-      active = false;
+      signal.cancelled = true;
       unsubscribe();
     };
   }, [currentVersionId, navigation]);
