@@ -45,13 +45,6 @@ export async function addBookmark(
     );
   }
 
-  // Add to sync queue
-  await db.runAsync(
-    `INSERT INTO sync_queue (table_name, record_id, action, payload)
-     VALUES ('bookmarks', ?, 'INSERT', ?)`,
-    [id, JSON.stringify({ id, versionId: normVersion, bookNumber, chapter, verseNumber, color })]
-  );
-
   return { id, versionId: normVersion, bookNumber, chapter, verseNumber, highlightColor: color, createdAt: now, updatedAt: now, isSynced: false };
 }
 
@@ -59,10 +52,6 @@ export async function addBookmark(
 export async function removeBookmark(id: string): Promise<void> {
   const db = getDatabase();
   await db.runAsync('DELETE FROM bookmarks WHERE id = ?', [id]);
-  await db.runAsync(
-    `INSERT INTO sync_queue (table_name, record_id, action, payload) VALUES ('bookmarks', ?, 'DELETE', '{}')`,
-    [id]
-  );
 }
 
 /** Remove a highlight by verse location */

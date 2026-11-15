@@ -115,23 +115,6 @@ export async function savePromiseVerse(
       [id, source, normVersion, bookNumber, chapter, verseNumber, calendarType, targetDate]
     );
 
-    // 3. Add to sync queue for offline sync support
-    const payload = {
-      id,
-      source,
-      versionId: normVersion,
-      bookNumber,
-      chapter,
-      verseNumber,
-      calendarType,
-      targetDate,
-    };
-    await db.runAsync(
-      `INSERT INTO sync_queue (table_name, record_id, action, payload)
-       VALUES ('verse_calendar', ?, 'INSERT', ?)`,
-      [id, JSON.stringify(payload)]
-    );
-
     console.log(`[calendarService] Promise verse (${calendarType}) successfully saved for ${targetDate}`);
   } catch (error) {
     console.error(`[calendarService] Failed to savePromiseVerse:`, error);

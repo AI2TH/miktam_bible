@@ -40,13 +40,6 @@ export async function markChapterAsRead(
     isSynced: row?.is_synced === 1,
   };
 
-  // Add to sync queue
-  await db.runAsync(
-    `INSERT INTO sync_queue (table_name, record_id, action, payload)
-     VALUES ('reading_progress', ?, 'INSERT', ?)`,
-    [record.id, JSON.stringify(record)]
-  );
-
   return record;
 }
 

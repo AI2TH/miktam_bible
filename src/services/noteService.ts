@@ -42,13 +42,6 @@ export async function addNote(
   // notes_fts is kept in sync by the notes_ai/notes_au/notes_ad triggers (schema.ts).
   // Writing to it here as well corrupts the external-content FTS index.
 
-  // Add to sync queue
-  await db.runAsync(
-    `INSERT INTO sync_queue (table_name, record_id, action, payload)
-     VALUES ('notes', ?, 'INSERT', ?)`,
-    [id, JSON.stringify({ id, versionId, bookNumber, chapter, verseNumber, content })]
-  );
-
   return { id, versionId, bookNumber, chapter, verseNumber, content, createdAt: now, updatedAt: now, isSynced: false };
 }
 
@@ -62,13 +55,6 @@ export async function updateNote(id: string, content: string): Promise<void> {
     `UPDATE notes SET content = ?, updated_at = ?, is_synced = 0 WHERE id = ?`,
     [content, now, id]
   );
-
-  // Add to sync queue
-  await db.runAsync(
-    `INSERT INTO sync_queue (table_name, record_id, action, payload)
-     VALUES ('notes', ?, 'UPDATE', ?)`,
-    [id, JSON.stringify({ id, content, updatedAt: now })]
-  );
 }
 
 /** Delete a note */
@@ -77,11 +63,6 @@ export async function deleteNote(id: string): Promise<void> {
 
   // FTS is updated by the notes_ad trigger
   await db.runAsync('DELETE FROM notes WHERE id = ?', [id]);
-
-  await db.runAsync(
-    `INSERT INTO sync_queue (table_name, record_id, action, payload) VALUES ('notes', ?, 'DELETE', '{}')`,
-    [id]
-  );
 }
 
 /**

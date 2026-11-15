@@ -332,15 +332,9 @@ export const CREATE_TABLES_SQL = [
     version         TEXT DEFAULT '1.0.0'
   )`,
 
-  `CREATE TABLE IF NOT EXISTS sync_queue (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    table_name      TEXT NOT NULL,
-    record_id       TEXT NOT NULL,
-    action          TEXT NOT NULL CHECK(action IN ('INSERT','UPDATE','DELETE')),
-    payload         TEXT NOT NULL,
-    created_at      TEXT DEFAULT (datetime('now')),
-    synced_at       TEXT
-  )`,
+  // Cloud sync was never wired up. Drop the old queue, which held copies of
+  // notes, bookmarks and reading progress that nothing ever read.
+  `DROP TABLE IF EXISTS sync_queue`,
 
   // =============================================
   // SEED DATA
