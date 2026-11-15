@@ -167,7 +167,7 @@ git clone https://github.com/AI2TH/miktam_bible.git
 cd miktam_bible
 
 # Install dependencies
-npm install --legacy-peer-deps
+npm ci
 ```
 
 ### Running on Android Emulator

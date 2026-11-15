@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 
 # Install npm dependencies cleanly inside the container (never touches host)
-RUN npm install --legacy-peer-deps
+RUN npm ci
 
 # Copy the rest of the project files
 COPY . .
