@@ -10,6 +10,7 @@
 
 import { getDatabase } from './database';
 import * as FileSystem from 'expo-file-system/legacy';
+import { assertVerseCount, countDistinctVerses } from './importCheck';
 import { GLOBAL_BIBLE_VERSIONS } from '../database/globalBibleCatalog';
 import { REMOTE_DB_VERSIONS, FILE_TO_REPO_MAP } from '../database/remoteBibleCatalog';
 
@@ -527,6 +528,16 @@ async function downloadViaDatabaseAttach(
          SELECT ?, book_number, chapter, verse_number, text FROM temp_src.verses`,
         [normVersion]
       );
+
+      // Every distinct source verse must have arrived; throwing rolls back
+      const expectedRow = await db.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) as count FROM (SELECT DISTINCT book_number, chapter, verse_number FROM temp_src.verses)`
+      );
+      const importedRow = await db.getFirstAsync<{ count: number }>(
+        'SELECT COUNT(*) as count FROM verses WHERE LOWER(version_id) = ?',
+        [normVersion]
+      );
+      assertVerseCount(normVersion, expectedRow?.count ?? 0, importedRow?.count ?? 0);
     });
 
     report('indexing', 90, 'Finalizing search index and offline status...');
@@ -535,7 +546,7 @@ async function downloadViaDatabaseAttach(
       'SELECT COUNT(*) as count FROM verses WHERE LOWER(version_id) = ?',
       [normVersion]
     );
-    const totalVerses = verseCountRow?.count || 31102;
+    const totalVerses = verseCountRow?.count ?? 0;
     const approxSizeMb = parseFloat((totalVerses * 0.00015).toFixed(1)) || 4.5;
 
     await db.runAsync(
@@ -605,21 +616,6 @@ async function downloadViaJson(
     );
   }
 
-  report('importing', 55, 'Registering Bible books structure...');
-  await db.withTransactionAsync(async () => {
-    await db.runAsync('DELETE FROM verses WHERE LOWER(version_id) = ?', [normVersion]);
-    await db.runAsync('DELETE FROM books WHERE LOWER(version_id) = ?', [normVersion]);
-
-    for (const cb of CANONICAL_BOOKS) {
-      await db.runAsync(
-        'INSERT OR REPLACE INTO books (version_id, book_number, name, abbreviation, testament, total_chapters) VALUES (?, ?, ?, ?, ?, ?)',
-        [normVersion, cb.bookNumber, cb.name, cb.abbreviation, cb.testament, cb.totalChapters]
-      );
-    }
-  });
-
-  report('importing', 65, 'Importing verses into SQLite database...');
-
   const verseBatch: Array<{ bookNumber: number; chapter: number; verseNumber: number; text: string }> = [];
 
   let bookIndex = 0;
@@ -655,30 +651,55 @@ async function downloadViaJson(
   const totalVerses = verseBatch.length;
   console.log(`[BibleDownloadService] Parsed ${totalVerses} verses for ${versionId}. Writing in chunks...`);
 
+  const expectedVerses = countDistinctVerses(verseBatch);
+  if (expectedVerses === 0) {
+    throw new Error(`The ${versionId} dataset contains no verses.`);
+  }
+
+  // One transaction for the whole import: an interrupted import rolls back to
+  // the previous state instead of leaving a partial Bible.
   const CHUNK_SIZE = 500;
   const totalChunks = Math.ceil(totalVerses / CHUNK_SIZE);
 
-  for (let c = 0; c < totalChunks; c++) {
-    const chunk = verseBatch.slice(c * CHUNK_SIZE, (c + 1) * CHUNK_SIZE);
-    await db.withTransactionAsync(async () => {
+  report('importing', 65, 'Importing verses into SQLite database...');
+  await db.withTransactionAsync(async () => {
+    await db.runAsync('DELETE FROM verses WHERE LOWER(version_id) = ?', [normVersion]);
+    await db.runAsync('DELETE FROM books WHERE LOWER(version_id) = ?', [normVersion]);
+
+    for (const cb of CANONICAL_BOOKS) {
+      await db.runAsync(
+        'INSERT OR REPLACE INTO books (version_id, book_number, name, abbreviation, testament, total_chapters) VALUES (?, ?, ?, ?, ?, ?)',
+        [normVersion, cb.bookNumber, cb.name, cb.abbreviation, cb.testament, cb.totalChapters]
+      );
+    }
+
+    for (let c = 0; c < totalChunks; c++) {
+      const chunk = verseBatch.slice(c * CHUNK_SIZE, (c + 1) * CHUNK_SIZE);
       for (const v of chunk) {
         await db.runAsync(
           'INSERT OR REPLACE INTO verses (version_id, book_number, chapter, verse_number, text) VALUES (?, ?, ?, ?, ?)',
           [normVersion, v.bookNumber, v.chapter, v.verseNumber, v.text]
         );
       }
-    });
 
-    const currentPercent = Math.round(65 + (c / totalChunks) * 30);
-    report(
-      'importing',
-      currentPercent,
-      `Imported ${Math.min((c + 1) * CHUNK_SIZE, totalVerses)} of ${totalVerses} verses (${currentPercent}%)...`
+      const currentPercent = Math.round(65 + (c / totalChunks) * 30);
+      report(
+        'importing',
+        currentPercent,
+        `Imported ${Math.min((c + 1) * CHUNK_SIZE, totalVerses)} of ${totalVerses} verses (${currentPercent}%)...`
+      );
+    }
+
+    // Throwing here rolls the whole import back
+    const importedRow = await db.getFirstAsync<{ count: number }>(
+      'SELECT COUNT(*) as count FROM verses WHERE LOWER(version_id) = ?',
+      [normVersion]
     );
-  }
+    assertVerseCount(normVersion, expectedVerses, importedRow?.count ?? 0);
+  });
 
   report('indexing', 97, 'Finalizing search index and offline status...');
-  const approxSizeMb = parseFloat((totalVerses * 0.00015).toFixed(1)) || 4.5;
+  const approxSizeMb = parseFloat((expectedVerses * 0.00015).toFixed(1)) || 4.5;
 
   await db.runAsync(
     'UPDATE bible_versions SET is_downloaded = 1, download_date = datetime("now"), total_size_mb = ? WHERE LOWER(id) = ?',

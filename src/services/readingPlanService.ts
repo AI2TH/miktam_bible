@@ -511,17 +511,7 @@ export async function startReadingPlan(
   const finalTitle = customConfig?.title || planDef.title;
   const finalDuration = customConfig?.durationDays || planDef.durationDays;
 
-  // Deactivate any existing active plans
-  await db.runAsync('UPDATE reading_plans SET is_active = 0 WHERE is_active = 1');
-
-  // Insert new plan
-  await db.runAsync(
-    `INSERT INTO reading_plans (id, plan_type, title, duration_days, start_date, is_active, reminder_time, reminder_enabled, current_day)
-     VALUES (?, ?, ?, ?, ?, 1, ?, ?, 1)`,
-    [planId, planType, finalTitle, finalDuration, todayStr, reminderTime, reminderEnabled ? 1 : 0]
-  );
-
-  // Generate and insert daily chapters with calendar dates
+  // Generate daily chapters with calendar dates
   const schedule = generatePlanSchedule(
     planType,
     todayStr,
@@ -529,7 +519,19 @@ export async function startReadingPlan(
     customConfig?.scope
   );
 
+  // One transaction: an interrupted start must neither leave the user with no
+  // active plan nor with a plan that has no days.
   await db.withTransactionAsync(async () => {
+    // Deactivate any existing active plans
+    await db.runAsync('UPDATE reading_plans SET is_active = 0 WHERE is_active = 1');
+
+    // Insert new plan
+    await db.runAsync(
+      `INSERT INTO reading_plans (id, plan_type, title, duration_days, start_date, is_active, reminder_time, reminder_enabled, current_day)
+       VALUES (?, ?, ?, ?, ?, 1, ?, ?, 1)`,
+      [planId, planType, finalTitle, finalDuration, todayStr, reminderTime, reminderEnabled ? 1 : 0]
+    );
+
     for (const item of schedule) {
       const dayId = generateUUID();
       await db.runAsync(
