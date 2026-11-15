@@ -1,5 +1,6 @@
 import type { WhisperContext } from 'whisper.rn';
 import * as FileSystem from 'expo-file-system/legacy';
+import { base64ToBytes, checkWhisperWav } from './audioFormat';
 
 let context: WhisperContext | null = null;
 let loadedPath: string | null = null;
@@ -93,6 +94,19 @@ export async function transcribeAudio(audioFilePath: string): Promise<string> {
   const nativeAudioPath = audioFilePath.startsWith('file://')
     ? audioFilePath.replace('file://', '')
     : audioFilePath;
+
+  // whisper.rn treats any file as 16 kHz PCM WAV; refuse other formats instead
+  // of transcribing noise (Android records AAC .m4a).
+  const fileUri = audioFilePath.startsWith('file://') ? audioFilePath : `file://${audioFilePath}`;
+  const head = await FileSystem.readAsStringAsync(fileUri, {
+    encoding: FileSystem.EncodingType.Base64,
+    position: 0,
+    length: 4096,
+  });
+  const format = checkWhisperWav(base64ToBytes(head));
+  if (!format.ok) {
+    throw new Error(format.reason);
+  }
 
   const task = context.transcribe(nativeAudioPath, {
     language: 'en',
