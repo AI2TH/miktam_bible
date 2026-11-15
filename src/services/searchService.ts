@@ -3,6 +3,7 @@ import { rrfMerge } from '../utils/rrfMerge';
 import { BOOK_NAMES } from '../utils/constants';
 import { getBookName } from '../utils/bookTranslations';
 import { cleanVerseText } from '../utils/bibleUtils';
+import { buildRankedSearch, toPage, tokenizeQuery } from './searchQuery';
 import type { SearchResult } from '../types/bible';
 
 /**
@@ -62,6 +63,45 @@ const SYNONYMS: Record<string, string[]> = {
   'god': ['god', 'lord', 'jehovah', 'father']
 };
 
+function toSearchResult(r: any, normVersion: string): SearchResult {
+  const cleanText = cleanVerseText(r.text);
+  return {
+    verse: {
+      id: r.id,
+      versionId: r.version_id,
+      bookNumber: r.book_number,
+      chapter: r.chapter,
+      verseNumber: r.verse_number,
+      text: cleanText,
+    },
+    bookName: getBookName(r.book_number, normVersion) || BOOK_NAMES[r.book_number] || `Book ${r.book_number}`,
+    score: Math.abs(r.rank || 0),
+    snippet: cleanText.substring(0, 150),
+    source: 'fts' as const,
+  };
+}
+
+/**
+ * One page of the Search screen: phrase, then all-words, then any-word matches,
+ * as a single ranked query (see searchQuery.ts), so pages neither repeat nor skip.
+ */
+export async function searchVersesPage(
+  query: string,
+  versionId: string,
+  limit: number = 20,
+  offset: number = 0
+): Promise<{ results: SearchResult[]; hasMore: boolean }> {
+  const normVersion = (versionId || 'kjv').toLowerCase().trim();
+  const { words } = tokenizeQuery(query);
+  const built = buildRankedSearch(words, normVersion, limit, offset);
+  if (!built) return { results: [], hasMore: false };
+
+  const db = await initSearchDatabase();
+  const rows = await db.getAllAsync<any>(built.sql, built.params);
+  const page = toPage(rows, limit);
+  return { results: page.rows.map((r) => toSearchResult(r, normVersion)), hasMore: page.hasMore };
+}
+
 export async function searchFTS(
   query: string,
   versionId: string,
@@ -69,36 +109,42 @@ export async function searchFTS(
   isRag: boolean = false,
   offset: number = 0
 ): Promise<SearchResult[]> {
+  if (!isRag) {
+    return (await searchVersesPage(query, versionId, limit, offset)).results;
+  }
+
   const normVersion = (versionId || 'kjv').toLowerCase().trim();
   const db = await initSearchDatabase();
 
-  // Clean query for FTS MATCH syntax
-  const cleanQuery = query.replace(/['\"*]/g, '').trim();
-  if (!cleanQuery) return [];
+  const { cleanQuery, words: tokens } = tokenizeQuery(query);
+  if (!cleanQuery || tokens.length === 0) return [];
+  let words = tokens;
 
-  // Split query into keywords (support unicode characters for multi-language & original texts)
-  let words = cleanQuery
-    .split(/\s+/)
-    .map(w => w.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()\[\]<>?@+]/g, '').toLowerCase())
-    .filter(w => w.length > 0);
+  // RAG Logic: Filter stop words and expand synonyms
+  const filtered = words.filter(w => !STOP_WORDS.has(w));
+  if (filtered.length > 0) words = filtered;
 
-  if (words.length === 0) return [];
+  const queryParts = words.map(w => {
+    if (SYNONYMS[w]) {
+      return '(' + SYNONYMS[w].map(syn => `"${syn}"`).join(' OR ') + ')';
+    }
+    return `"${w}"`;
+  });
 
-  let rows: any[] = [];
+  let ftsQuery = queryParts.length > 0 ? queryParts.join(' AND ') : `"${cleanQuery}"`;
+  let rows = await db.getAllAsync<any>(
+    `SELECT v.id, v.version_id, v.book_number, v.chapter, v.verse_number, v.text, f.rank
+     FROM verses_fts f
+     JOIN verses v ON v.id = f.rowid
+     WHERE f.verses_fts MATCH ? AND LOWER(v.version_id) = ? AND v.book_number <= 66
+     ORDER BY f.rank
+     LIMIT ? OFFSET ?`,
+    [ftsQuery, normVersion, Number(limit), Number(offset)]
+  );
 
-  if (isRag) {
-    // RAG Logic: Filter stop words and expand synonyms
-    const filtered = words.filter(w => !STOP_WORDS.has(w));
-    if (filtered.length > 0) words = filtered;
-
-    const queryParts = words.map(w => {
-      if (SYNONYMS[w]) {
-        return '(' + SYNONYMS[w].map(syn => `"${syn}"`).join(' OR ') + ')';
-      }
-      return `"${w}"`;
-    });
-
-    let ftsQuery = queryParts.length > 0 ? queryParts.join(' AND ') : `"${cleanQuery}"`;
+  // Fallback to OR for RAG
+  if (rows.length < 3 && words.length > 1) {
+    ftsQuery = queryParts.join(' OR ');
     rows = await db.getAllAsync<any>(
       `SELECT v.id, v.version_id, v.book_number, v.chapter, v.verse_number, v.text, f.rank
        FROM verses_fts f
@@ -108,102 +154,9 @@ export async function searchFTS(
        LIMIT ? OFFSET ?`,
       [ftsQuery, normVersion, Number(limit), Number(offset)]
     );
-
-    // Fallback to OR for RAG
-    if (rows.length < 3 && words.length > 1) {
-      const fallbackParts = words.map(w => {
-        if (SYNONYMS[w]) {
-          return '(' + SYNONYMS[w].map(syn => `"${syn}"`).join(' OR ') + ')';
-        }
-        return `"${w}"`;
-      });
-      ftsQuery = fallbackParts.join(' OR ');
-      rows = await db.getAllAsync<any>(
-        `SELECT v.id, v.version_id, v.book_number, v.chapter, v.verse_number, v.text, f.rank
-         FROM verses_fts f
-         JOIN verses v ON v.id = f.rowid
-         WHERE f.verses_fts MATCH ? AND LOWER(v.version_id) = ? AND v.book_number <= 66
-         ORDER BY f.rank
-         LIMIT ? OFFSET ?`,
-        [ftsQuery, normVersion, Number(limit), Number(offset)]
-      );
-    }
-  } else {
-    // Regular Search Logic: Phrase Match -> AND Fallback -> OR Fallback
-    
-    // Tier 1: Exact Phrase Search (only if multi-word)
-    if (words.length > 1) {
-      rows = await db.getAllAsync<any>(
-        `SELECT v.id, v.version_id, v.book_number, v.chapter, v.verse_number, v.text, f.rank
-         FROM verses_fts f
-         JOIN verses v ON v.id = f.rowid
-         WHERE f.verses_fts MATCH ? AND LOWER(v.version_id) = ? AND v.book_number <= 66
-         ORDER BY f.rank
-         LIMIT ? OFFSET ?`,
-        [`"${cleanQuery}"`, normVersion, Number(limit), Number(offset)]
-      );
-    }
-
-    // Tier 2: Keyword AND search (required if phrase yields few results or it is a single word)
-    if (rows.length < 5) {
-      const andQuery = words.map(w => `"${w}"`).join(' AND ');
-      const andRows = await db.getAllAsync<any>(
-        `SELECT v.id, v.version_id, v.book_number, v.chapter, v.verse_number, v.text, f.rank
-         FROM verses_fts f
-         JOIN verses v ON v.id = f.rowid
-         WHERE f.verses_fts MATCH ? AND LOWER(v.version_id) = ? AND v.book_number <= 66
-         ORDER BY f.rank
-         LIMIT ? OFFSET ?`,
-        [andQuery, normVersion, Number(limit), Number(offset)]
-      );
-
-      const existingIds = new Set(rows.map(r => r.id));
-      for (const row of andRows) {
-        if (!existingIds.has(row.id)) {
-          rows.push(row);
-        }
-      }
-    }
-
-    // Tier 3: Keyword OR search (fallback if still few results)
-    if (rows.length < 5 && words.length > 1) {
-      const orQuery = words.map(w => `"${w}"`).join(' OR ');
-      const orRows = await db.getAllAsync<any>(
-        `SELECT v.id, v.version_id, v.book_number, v.chapter, v.verse_number, v.text, f.rank
-         FROM verses_fts f
-         JOIN verses v ON v.id = f.rowid
-         WHERE f.verses_fts MATCH ? AND LOWER(v.version_id) = ? AND v.book_number <= 66
-         ORDER BY f.rank
-         LIMIT ? OFFSET ?`,
-        [orQuery, normVersion, Number(limit), Number(offset)]
-      );
-
-      const existingIds = new Set(rows.map(r => r.id));
-      for (const row of orRows) {
-        if (!existingIds.has(row.id)) {
-          rows.push(row);
-        }
-      }
-    }
   }
 
-  return rows.map((r: any) => {
-    const cleanText = cleanVerseText(r.text);
-    return {
-      verse: {
-        id: r.id,
-        versionId: r.version_id,
-        bookNumber: r.book_number,
-        chapter: r.chapter,
-        verseNumber: r.verse_number,
-        text: cleanText,
-      },
-      bookName: getBookName(r.book_number, normVersion) || BOOK_NAMES[r.book_number] || `Book ${r.book_number}`,
-      score: Math.abs(r.rank || 0),
-      snippet: cleanText.substring(0, 150),
-      source: 'fts' as const,
-    };
-  });
+  return rows.map((r: any) => toSearchResult(r, normVersion));
 }
 
 /**

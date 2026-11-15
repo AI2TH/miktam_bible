@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { searchFTS } from '../services/searchService';
+import { searchVersesPage } from '../services/searchService';
 import type { SearchResult } from '../types/bible';
 import { correctQuery, initDictionary } from '../utils/spellChecker';
 
@@ -12,11 +12,15 @@ export function useSearch() {
   const [error, setError] = useState<string | null>(null);
   const [correctedQuery, setCorrectedQuery] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
-  const [page, setPage] = useState(0);
 
   const lastQueryRef = useRef<string>('');
   const lastVersionIdRef = useRef<string>('kjv');
   const searchTokenRef = useRef<number>(0);
+  // Refs, not state: onEndReached can fire twice before a re-render, and a
+  // state-based guard would let both calls fetch the same page.
+  const pageRef = useRef<number>(0);
+  const hasMoreRef = useRef<boolean>(false);
+  const loadMoreInFlightRef = useRef<boolean>(false);
 
   useEffect(() => {
     initDictionary().catch(console.error);
@@ -39,7 +43,7 @@ export function useSearch() {
 
     try {
       const offset = nextPage * PAGE_SIZE;
-      let data = await searchFTS(query, versionId, PAGE_SIZE, false, offset);
+      let { results: data, hasMore: more } = await searchVersesPage(query, versionId, PAGE_SIZE, offset);
 
       // Spell-check only on the first page; it is itself a DB call.
       if (nextPage === 0) {
@@ -47,7 +51,11 @@ export function useSearch() {
         if (hasChanges) {
           if (data.length === 0) {
             // If 0 results, auto-search the corrected query from page 0
-            data = await searchFTS(corrected, versionId, PAGE_SIZE, false, 0);
+            ({ results: data, hasMore: more } = await searchVersesPage(corrected, versionId, PAGE_SIZE, 0));
+            if (token === searchTokenRef.current) {
+              // Later pages continue the query whose results are shown
+              lastQueryRef.current = corrected;
+            }
           }
           if (token === searchTokenRef.current) {
             setCorrectedQuery(corrected);
@@ -65,14 +73,16 @@ export function useSearch() {
       } else {
         setResults(data);
       }
-      setPage(nextPage);
-      setHasMore(data.length === PAGE_SIZE);
+      pageRef.current = nextPage;
+      hasMoreRef.current = more;
+      setHasMore(more);
       return true;
     } catch (e) {
       if (token === searchTokenRef.current) {
         setError(e instanceof Error ? e.message : 'Search failed');
         if (!isLoadMore) {
           setResults([]);
+          hasMoreRef.current = false;
           setHasMore(false);
         }
       }
@@ -90,8 +100,10 @@ export function useSearch() {
 
   const search = useCallback(async (query: string, versionId: string = 'kjv') => {
     if (!query.trim()) {
+      searchTokenRef.current += 1;
       setResults([]);
       setCorrectedQuery(null);
+      hasMoreRef.current = false;
       setHasMore(false);
       setError(null);
       return;
@@ -99,25 +111,33 @@ export function useSearch() {
 
     lastQueryRef.current = query.trim();
     lastVersionIdRef.current = versionId;
+    pageRef.current = 0;
+    hasMoreRef.current = false;
 
     const token = ++searchTokenRef.current;
     await runSearch(query.trim(), versionId, 0, token, false);
   }, [runSearch]);
 
   const loadMore = useCallback(async () => {
-    if (loadingMore || !hasMore || !lastQueryRef.current) return;
+    if (loadMoreInFlightRef.current || !hasMoreRef.current || !lastQueryRef.current) return;
 
+    loadMoreInFlightRef.current = true;
     const token = searchTokenRef.current;
-    await runSearch(lastQueryRef.current, lastVersionIdRef.current, page + 1, token, true);
-  }, [loadingMore, hasMore, page, runSearch]);
+    try {
+      await runSearch(lastQueryRef.current, lastVersionIdRef.current, pageRef.current + 1, token, true);
+    } finally {
+      loadMoreInFlightRef.current = false;
+    }
+  }, [runSearch]);
 
   const clear = useCallback(() => {
     searchTokenRef.current += 1;
     setResults([]);
     setError(null);
     setCorrectedQuery(null);
+    hasMoreRef.current = false;
     setHasMore(false);
-    setPage(0);
+    pageRef.current = 0;
     setLoading(false);
     setLoadingMore(false);
   }, []);
