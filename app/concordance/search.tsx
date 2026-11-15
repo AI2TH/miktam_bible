@@ -15,7 +15,7 @@ export default function ConcordanceSearchScreen() {
   const { colors, spacing, borderRadius } = useTheme();
   const [query, setQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'all' | 'greek' | 'hebrew'>('all');
-  const { searchResults, loading, searchStrongs, clearSearch } = useConcordance();
+  const { searchResults, loadingSearch: loading, searchStrongs, clearSearch } = useConcordance();
 
   // Premium Live Search on typing with a small 250ms debounce
   React.useEffect(() => {

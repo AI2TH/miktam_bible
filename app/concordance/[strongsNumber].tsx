@@ -18,7 +18,7 @@ export default function StrongsDetailScreen() {
   const { colors, spacing } = useTheme();
   const { strongsNumber } = useLocalSearchParams<{ strongsNumber: string }>();
   const { navigateTo, currentVersionId } = useReaderStore();
-  const { strongsEntry, versesWithStrongs, loading, lookupStrongs, loadVersesWithStrongs } = useConcordance();
+  const { strongsEntry, versesWithStrongs, loadingEntry, lookupStrongs, loadVersesWithStrongs } = useConcordance();
 
   useEffect(() => {
     if (strongsNumber) {
@@ -36,7 +36,7 @@ export default function StrongsDetailScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <Header title={`Concordance Study: ${strongsNumber}`} showBack={true} />
 
-      {loading && !strongsEntry ? (
+      {loadingEntry && !strongsEntry ? (
         <View style={styles.center}>
           <ActivityIndicator color={colors.primary} size="large" />
         </View>

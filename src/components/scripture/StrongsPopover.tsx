@@ -19,7 +19,7 @@ export function StrongsPopover({
   onViewAllVerses,
 }: StrongsPopoverProps) {
   const { colors, spacing } = useTheme();
-  const { strongsEntry, loading, lookupStrongs } = useConcordance();
+  const { strongsEntry, loadingEntry: loading, lookupStrongs } = useConcordance();
 
   useEffect(() => {
     if (strongsNumber) {
