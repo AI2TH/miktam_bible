@@ -579,9 +579,10 @@ export async function completeDayReading(planId: string, dayNumber: number): Pro
     [now, planId, dayNumber]
   );
 
-  // Advance current_day in reading_plans
+  // Advance current_day in reading_plans (never move it backwards when an
+  // earlier day is completed from the schedule)
   await db.runAsync(
-    'UPDATE reading_plans SET current_day = ? WHERE id = ?',
+    'UPDATE reading_plans SET current_day = MAX(current_day, ?) WHERE id = ?',
     [dayNumber + 1, planId]
   );
 
