@@ -134,7 +134,7 @@ export async function addEvent(
   // If reminder is enabled, schedule local notification
   if (event.reminderEnabled && Platform.OS !== 'web') {
     try {
-      await scheduleEventReminder(event.date, event.eventTime, event.title, event.location);
+      await scheduleEventReminder(id, event.date, event.eventTime, event.title, event.location);
     } catch (err) {
       console.warn('[calendarPlannerService] Failed to schedule event reminder notification:', err);
     }
@@ -159,6 +159,15 @@ export async function deleteEvent(id: string): Promise<void> {
     await db.runAsync('DELETE FROM calendar_events WHERE id = ?', [id]);
   } catch (e) {
     console.error('[calendarPlannerService] Failed to delete event:', e);
+    return;
+  }
+  // Cancel the pending reminder so a deleted event does not still notify
+  if (Platform.OS !== 'web') {
+    try {
+      await Notifications.cancelScheduledNotificationAsync(eventReminderId(id));
+    } catch (e) {
+      console.warn('[calendarPlannerService] Failed to cancel event reminder:', e);
+    }
   }
 }
 
@@ -189,7 +198,12 @@ export async function getCalendarBadgeDates(
 }
 
 /** Schedule a notification for an event */
+function eventReminderId(eventId: string): string {
+  return `event_${eventId}`;
+}
+
 async function scheduleEventReminder(
+  eventId: string,
   dateStr: string,
   timeStr?: string,
   title?: string,
@@ -218,6 +232,7 @@ async function scheduleEventReminder(
   // If in the future, schedule notification
   if (targetDate.getTime() > Date.now()) {
     await Notifications.scheduleNotificationAsync({
+      identifier: eventReminderId(eventId),
       content: {
         title: `Reminder: ${title || 'Church Meeting'}`,
         body: `${timeStr ? timeStr + ' - ' : ''}${title || 'Event'}${
