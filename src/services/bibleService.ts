@@ -116,13 +116,62 @@ export async function getBook(versionId: string, bookNumber: number): Promise<Bo
 
 // ─── VERSES ──────────────────────────────────────
 
-export async function getChapterVerses(
+// Recently read chapters, so going back and forth between chapters (and the
+// reader's re-render on open) does not query the database again.
+const CHAPTER_CACHE_LIMIT = 30;
+const chapterCache = new Map<string, Verse[]>();
+const chapterRequests = new Map<string, Promise<Verse[]>>();
+
+/** Forget cached chapters. Call after a translation is downloaded or deleted. */
+export function clearChapterCache(): void {
+  chapterCache.clear();
+  chapterRequests.clear();
+}
+
+export function getChapterVerses(
   versionId: string,
   bookNumber: number,
   chapter: number
 ): Promise<Verse[]> {
   const normVersion = (versionId || 'kjv').toLowerCase().trim();
-  console.log(`[bibleService] getChapterVerses called for versionId="${versionId}", bookNumber=${bookNumber}, chapter=${chapter}`);
+  const key = `${normVersion}|${bookNumber}|${chapter}`;
+
+  const cached = chapterCache.get(key);
+  if (cached) {
+    // Refresh its position so the most recently read chapters are kept
+    chapterCache.delete(key);
+    chapterCache.set(key, cached);
+    return Promise.resolve(cached);
+  }
+
+  // Share one query between callers asking for the same chapter at once
+  const inFlight = chapterRequests.get(key);
+  if (inFlight) return inFlight;
+
+  const request = queryChapterVerses(normVersion, bookNumber, chapter)
+    .then((verses) => {
+      if (chapterRequests.get(key) === request) {
+        chapterCache.set(key, verses);
+        if (chapterCache.size > CHAPTER_CACHE_LIMIT) {
+          const oldest = chapterCache.keys().next().value;
+          if (oldest !== undefined) chapterCache.delete(oldest);
+        }
+      }
+      return verses;
+    })
+    .finally(() => {
+      if (chapterRequests.get(key) === request) chapterRequests.delete(key);
+    });
+  chapterRequests.set(key, request);
+  return request;
+}
+
+async function queryChapterVerses(
+  normVersion: string,
+  bookNumber: number,
+  chapter: number
+): Promise<Verse[]> {
+  console.log(`[bibleService] getChapterVerses called for versionId="${normVersion}", bookNumber=${bookNumber}, chapter=${chapter}`);
   const db = getDatabase();
   try {
     let rows = await db.getAllAsync<any>(
@@ -140,7 +189,7 @@ export async function getChapterVerses(
         [normVersion]
       );
       if (!anyVerses) {
-        console.log(`[bibleService] No verses at all in DB for ${versionId}, falling back to kjv`);
+        console.log(`[bibleService] No verses at all in DB for ${normVersion}, falling back to kjv`);
         rows = await db.getAllAsync<any>(
           `SELECT * FROM verses
            WHERE version_id = 'kjv' AND book_number = ? AND chapter = ?
