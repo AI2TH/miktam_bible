@@ -4,27 +4,6 @@
  */
 export const SCHEMA_VERSION = 1;
 
-/**
- * DDL for the recordings table. Shared with the migration in database.ts that
- * rebuilds older copies whose CHECK constraint predates 'needs_model'.
- */
-export function createRecordingsTableSql(tableName: string): string {
-  return `CREATE TABLE IF NOT EXISTS ${tableName} (
-    id              TEXT PRIMARY KEY,
-    title           TEXT,
-    local_file_path TEXT NOT NULL,
-    duration_secs   INTEGER DEFAULT 0,
-    transcript      TEXT,
-    transcription_status TEXT DEFAULT 'pending'
-                    CHECK(transcription_status IN ('pending','processing','done','failed','needs_model')),
-    linked_book     INTEGER,
-    linked_chapter  INTEGER,
-    linked_verse    INTEGER,
-    is_synced       INTEGER DEFAULT 0,
-    created_at      TEXT DEFAULT (datetime('now'))
-  )`;
-}
-
 export const CREATE_TABLES_SQL = [
   // =============================================
   // BIBLE TEXT TABLES
@@ -160,69 +139,10 @@ export const CREATE_TABLES_SQL = [
     ON cross_references(target_book, target_chapter, target_verse_start)`,
 
   // =============================================
-  // USER DATA TABLES (all local, zero internet)
+  // CALENDAR VERSES (Bible content, may ship in the seed)
+  // User data tables (notes, bookmarks, plans, recordings, ...) live in
+  // user.db; see src/database/userSchema.ts.
   // =============================================
-
-  `CREATE TABLE IF NOT EXISTS profile (
-    id              TEXT PRIMARY KEY DEFAULT 'local_user',
-    display_name    TEXT DEFAULT 'Reader',
-    preferred_version TEXT DEFAULT 'kjv',
-    preferred_language TEXT DEFAULT 'en',
-    scripture_font_size INTEGER DEFAULT 18,
-    sync_enabled    INTEGER DEFAULT 0,
-    remote_user_id  TEXT,
-    created_at      TEXT DEFAULT (datetime('now')),
-    updated_at      TEXT DEFAULT (datetime('now'))
-  )`,
-
-  `CREATE TABLE IF NOT EXISTS bookmarks (
-    id              TEXT PRIMARY KEY,
-    version_id      TEXT NOT NULL,
-    book_number     INTEGER NOT NULL,
-    chapter         INTEGER NOT NULL,
-    verse_number    INTEGER NOT NULL,
-    highlight_color TEXT DEFAULT '#FFD700',
-    created_at      TEXT DEFAULT (datetime('now')),
-    updated_at      TEXT DEFAULT (datetime('now')),
-    is_synced       INTEGER DEFAULT 0,
-    UNIQUE(version_id, book_number, chapter, verse_number)
-  )`,
-
-  `CREATE TABLE IF NOT EXISTS notes (
-    id              TEXT PRIMARY KEY,
-    version_id      TEXT NOT NULL,
-    book_number     INTEGER NOT NULL,
-    chapter         INTEGER NOT NULL,
-    verse_number    INTEGER,
-    content         TEXT NOT NULL,
-    created_at      TEXT DEFAULT (datetime('now')),
-    updated_at      TEXT DEFAULT (datetime('now')),
-    is_synced       INTEGER DEFAULT 0
-  )`,
-
-  // FTS on notes content for searching within notes
-  `CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
-    content,
-    content=notes,
-    content_rowid=rowid,
-    tokenize='porter unicode61'
-  )`,
-
-  // Triggers to keep notes_fts in sync with notes table
-  `CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
-    INSERT INTO notes_fts(rowid, content) VALUES (new.rowid, new.content);
-  END`,
-
-  `CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
-    INSERT INTO notes_fts(notes_fts, rowid, content) VALUES('delete', old.rowid, old.content);
-  END`,
-
-  `CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE ON notes BEGIN
-    INSERT INTO notes_fts(notes_fts, rowid, content) VALUES('delete', old.rowid, old.content);
-    INSERT INTO notes_fts(rowid, content) VALUES (new.rowid, new.content);
-  END`,
-
-  createRecordingsTableSql('recordings'),
 
   `CREATE TABLE IF NOT EXISTS verse_calendar (
     id              TEXT PRIMARY KEY,
@@ -235,88 +155,6 @@ export const CREATE_TABLES_SQL = [
     target_date     TEXT NOT NULL,
     created_at      TEXT DEFAULT (datetime('now'))
   )`,
-
-  `CREATE TABLE IF NOT EXISTS calendar_todos (
-    id              TEXT PRIMARY KEY,
-    date            TEXT NOT NULL,
-    title           TEXT NOT NULL,
-    is_completed    INTEGER DEFAULT 0,
-    created_at      TEXT DEFAULT (datetime('now'))
-  )`,
-
-  `CREATE INDEX IF NOT EXISTS idx_calendar_todos_date
-    ON calendar_todos(date)`,
-
-  `CREATE TABLE IF NOT EXISTS calendar_events (
-    id              TEXT PRIMARY KEY,
-    date            TEXT NOT NULL,
-    title           TEXT NOT NULL,
-    event_time      TEXT,
-    location        TEXT,
-    notes           TEXT,
-    reminder_enabled INTEGER DEFAULT 0,
-    created_at      TEXT DEFAULT (datetime('now'))
-  )`,
-
-  `CREATE INDEX IF NOT EXISTS idx_calendar_events_date
-    ON calendar_events(date)`,
-
-  `CREATE TABLE IF NOT EXISTS reading_plans (
-    id              TEXT PRIMARY KEY,
-    plan_type       TEXT NOT NULL,
-    title           TEXT NOT NULL,
-    duration_days   INTEGER NOT NULL,
-    start_date      TEXT NOT NULL,
-    is_active       INTEGER DEFAULT 1,
-    reminder_time   TEXT DEFAULT '08:00',
-    reminder_enabled INTEGER DEFAULT 1,
-    current_day     INTEGER DEFAULT 1,
-    created_at      TEXT DEFAULT (datetime('now'))
-  )`,
-
-  `CREATE TABLE IF NOT EXISTS reading_plan_days (
-    id              TEXT PRIMARY KEY,
-    plan_id         TEXT NOT NULL,
-    day_number      INTEGER NOT NULL,
-    book_number     INTEGER NOT NULL,
-    start_chapter   INTEGER NOT NULL,
-    end_chapter     INTEGER NOT NULL,
-    scheduled_date  TEXT,
-    reading_label   TEXT,
-    is_completed    INTEGER DEFAULT 0,
-    completed_at    TEXT,
-    UNIQUE(plan_id, day_number)
-  )`,
-
-  `CREATE INDEX IF NOT EXISTS idx_reading_plan_days
-    ON reading_plan_days(plan_id, day_number)`,
-
-  `CREATE INDEX IF NOT EXISTS idx_reading_plan_days_date
-    ON reading_plan_days(scheduled_date)`,
-
-  `CREATE TABLE IF NOT EXISTS reading_progress (
-    id              TEXT PRIMARY KEY,
-    version_id      TEXT NOT NULL,
-    book_number     INTEGER NOT NULL,
-    chapter         INTEGER NOT NULL,
-    read_date       TEXT DEFAULT (date('now')),
-    reading_time_secs INTEGER DEFAULT 0,
-    is_synced       INTEGER DEFAULT 0,
-    UNIQUE(version_id, book_number, chapter, read_date)
-  )`,
-
-  `CREATE TABLE IF NOT EXISTS chat_history (
-    id              TEXT PRIMARY KEY,
-    session_id      TEXT NOT NULL,
-    role            TEXT NOT NULL CHECK(role IN ('user','assistant')),
-    content         TEXT NOT NULL,
-    cited_verses    TEXT,
-    version_id      TEXT,
-    created_at      TEXT DEFAULT (datetime('now'))
-  )`,
-
-  `CREATE INDEX IF NOT EXISTS idx_chat_session
-    ON chat_history(session_id, created_at)`,
 
   `CREATE TABLE IF NOT EXISTS ai_models (
     id              TEXT PRIMARY KEY,
@@ -339,9 +177,6 @@ export const CREATE_TABLES_SQL = [
   // =============================================
   // SEED DATA
   // =============================================
-
-  // Insert default profile
-  `INSERT OR IGNORE INTO profile (id) VALUES ('local_user')`,
 
   // Register Condensed Bible & Comprehensive World Translations (Public Domain / Free Study Editions)
   `INSERT OR IGNORE INTO bible_versions (id, name, language, is_downloaded, total_size_mb) VALUES

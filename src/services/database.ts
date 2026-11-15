@@ -1,7 +1,16 @@
 import * as SQLite from 'expo-sqlite';
 import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { CREATE_TABLES_SQL, SCHEMA_VERSION, createRecordingsTableSql } from '../database/schema';
+import { CREATE_TABLES_SQL, SCHEMA_VERSION } from '../database/schema';
+import {
+  USER_DB_FILE,
+  USER_SCHEMA,
+  attachUserSchema,
+  exportUserDataBeforeReseed,
+  hasUserTables,
+  needsReseed,
+  type SqlExecutor,
+} from '../database/userSchema';
 import { GLOBAL_LANGUAGES, GLOBAL_BIBLE_VERSIONS } from '../database/globalBibleCatalog';
 
 let db: SQLite.SQLiteDatabase | null = null;
@@ -79,9 +88,67 @@ export function initDatabase(): Promise<SQLite.SQLiteDatabase> {
   return initPromise;
 }
 
+/** Adapt an expo-sqlite connection to the executor used by userSchema.ts. */
+function executor(database: SQLite.SQLiteDatabase): SqlExecutor {
+  return {
+    exec: (sql) => database.execAsync(sql),
+    all: <T,>(sql: string, params: (string | number | null)[] = []) => database.getAllAsync<T>(sql, params),
+    run: async (sql, params = []) => {
+      await database.runAsync(sql, params);
+    },
+    transaction: (fn) => database.withTransactionAsync(fn),
+  };
+}
+
+/** expo-file-system URIs start with file://; SQLite's ATTACH wants a plain path. */
+function toFsPath(uri: string): string {
+  return decodeURI(uri.replace(/^file:\/\//, ''));
+}
+
+/**
+ * Before bible.db is replaced by the bundled seed, copy its user tables into
+ * user.db. Returns false if that failed, in which case bible.db must not be deleted.
+ */
+async function exportUserDataFromOldDatabase(userDbPath: string): Promise<boolean> {
+  let old: SQLite.SQLiteDatabase | null = null;
+  try {
+    old = await SQLite.openDatabaseAsync('bible.db');
+    await old.runAsync(`ATTACH DATABASE ? AS ${USER_SCHEMA}`, [userDbPath]);
+    const copied = await exportUserDataBeforeReseed(executor(old));
+    console.log('[DB] Saved user data to user.db before re-seeding:', copied);
+    await old.execAsync(`DETACH DATABASE ${USER_SCHEMA}`);
+    return true;
+  } catch (e) {
+    console.error('[DB] Could not save user data before re-seeding:', e);
+    return false;
+  } finally {
+    if (old) await old.closeAsync().catch(() => {});
+  }
+}
+
+async function deleteDatabaseFiles(dbPath: string): Promise<void> {
+  for (const suffix of ['', '-wal', '-shm']) {
+    await FileSystem.deleteAsync(`${dbPath}${suffix}`, { idempotent: true });
+  }
+}
+
+/** Keep the old file aside instead of deleting it when its user data could not be copied. */
+async function backUpDatabaseFiles(dbPath: string): Promise<void> {
+  const backup = `${dbPath}.pre-reseed`;
+  await deleteDatabaseFiles(backup);
+  for (const suffix of ['', '-wal', '-shm']) {
+    const info = await FileSystem.getInfoAsync(`${dbPath}${suffix}`);
+    if (info.exists) {
+      await FileSystem.moveAsync({ from: `${dbPath}${suffix}`, to: `${backup}${suffix}` });
+    }
+  }
+  console.warn(`[DB] Old database kept at ${backup}`);
+}
+
 async function openAndPrepareDatabase(): Promise<SQLite.SQLiteDatabase> {
   const dbDir = `${FileSystem.documentDirectory}SQLite`;
   const dbPath = `${dbDir}/bible.db`;
+  const userDbPath = toFsPath(`${dbDir}/${USER_DB_FILE}`);
 
   try {
     // Ensure SQLite directory exists
@@ -93,18 +160,27 @@ async function openAndPrepareDatabase(): Promise<SQLite.SQLiteDatabase> {
     const dbInfo = await FileSystem.getInfoAsync(dbPath);
     const dbInfoSize = dbInfo.exists && 'size' in dbInfo ? (dbInfo.size || 0) : 0;
     const currentSeededVer = await AsyncStorage.getItem('seeded_bible_db_version');
-    const isVersionMatch = currentSeededVer === SEEDED_DB_VERSION;
-    const isValidSize = dbInfo.exists && dbInfoSize >= MIN_VALID_DB_SIZE && isVersionMatch;
+    const reseed = needsReseed({
+      exists: dbInfo.exists,
+      size: dbInfoSize,
+      minSize: MIN_VALID_DB_SIZE,
+      seededVersion: currentSeededVer,
+      expectedVersion: SEEDED_DB_VERSION,
+    });
 
-    if (!isValidSize) {
+    if (reseed) {
       if (dbInfo.exists) {
-        console.log(`[DB] Local database is outdated or invalid (${dbInfoSize} bytes, seededVer: ${currentSeededVer}). Removing to re-seed...`);
+        console.log(`[DB] Local database is outdated or invalid (${dbInfoSize} bytes, seededVer: ${currentSeededVer}). Re-seeding...`);
+        // Notes, highlights, plans and recordings must survive the re-seed
+        const saved = await exportUserDataFromOldDatabase(userDbPath);
         try {
-          await FileSystem.deleteAsync(dbPath, { idempotent: true });
-          await FileSystem.deleteAsync(`${dbPath}-wal`, { idempotent: true });
-          await FileSystem.deleteAsync(`${dbPath}-shm`, { idempotent: true });
+          if (saved) {
+            await deleteDatabaseFiles(dbPath);
+          } else {
+            await backUpDatabaseFiles(dbPath);
+          }
         } catch (delError) {
-          console.warn('[DB] Failed to delete existing database:', delError);
+          console.warn('[DB] Failed to remove the old database:', delError);
         }
       }
       console.log('[DB] Seeding database...');
@@ -145,8 +221,9 @@ async function openAndPrepareDatabase(): Promise<SQLite.SQLiteDatabase> {
     }
   }
 
-  // Rebuild tables whose constraints predate the current schema
-  await migrateRecordingsStatusConstraint(database);
+  // User data lives in user.db, attached as `user`. Moving the tables out of
+  // bible.db also rebuilds recordings with the current CHECK constraint.
+  await attachUserDatabase(database, userDbPath);
   await rebuildNotesSearchIndexOnce(database);
 
   // Set schema version
@@ -212,31 +289,24 @@ async function rebuildNotesSearchIndexOnce(database: SQLite.SQLiteDatabase): Pro
 }
 
 /**
- * Older databases (including the preseeded bible.db) were created with a CHECK
- * constraint that rejects transcription_status = 'needs_model'. SQLite cannot
- * alter a CHECK constraint, so copy the rows into a table with the current DDL.
+ * Attach user.db and make sure the user tables live only there. If the attach
+ * fails but bible.db still holds the user tables, keep working from those.
  */
-async function migrateRecordingsStatusConstraint(database: SQLite.SQLiteDatabase): Promise<void> {
+async function attachUserDatabase(database: SQLite.SQLiteDatabase, userDbPath: string): Promise<void> {
+  const exec = executor(database);
   try {
-    const row = await database.getFirstAsync<{ sql: string }>(
-      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'recordings'"
-    );
-    if (!row || row.sql.includes('needs_model')) return;
-
-    console.log('[DB] Migrating recordings table to allow the needs_model status');
-    const columns =
-      'id, title, local_file_path, duration_secs, transcript, transcription_status, linked_book, linked_chapter, linked_verse, is_synced, created_at';
-    await database.withExclusiveTransactionAsync(async (txn) => {
-      await txn.execAsync('DROP TABLE IF EXISTS recordings_migrating');
-      await txn.execAsync(createRecordingsTableSql('recordings_migrating'));
-      await txn.execAsync(
-        `INSERT INTO recordings_migrating (${columns}) SELECT ${columns} FROM recordings`
-      );
-      await txn.execAsync('DROP TABLE recordings');
-      await txn.execAsync('ALTER TABLE recordings_migrating RENAME TO recordings');
-    });
+    await database.runAsync(`ATTACH DATABASE ? AS ${USER_SCHEMA}`, [userDbPath]);
+    await database.execAsync(`PRAGMA ${USER_SCHEMA}.journal_mode = WAL`);
   } catch (e) {
-    console.error('[DB] Failed to migrate recordings table:', e);
+    if (await hasUserTables(exec, 'main').catch(() => false)) {
+      console.error('[DB] Could not attach user.db; using the user tables in bible.db:', e);
+      return;
+    }
+    throw e;
+  }
+  const moved = await attachUserSchema(exec);
+  if (Object.keys(moved).length > 0) {
+    console.log('[DB] Moved user data from bible.db to user.db:', moved);
   }
 }
 
