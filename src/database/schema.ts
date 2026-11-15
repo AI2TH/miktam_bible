@@ -46,6 +46,15 @@ export const CREATE_TABLES_SQL = [
     UNIQUE(version_id, book_number, chapter, verse_number)
   )`,
 
+  // Every reader query matches on LOWER(version_id), which cannot use the
+  // UNIQUE(version_id, ...) index above, so each chapter open scanned the whole
+  // verses table. These expression indexes match those queries exactly.
+  `CREATE INDEX IF NOT EXISTS idx_verses_lower_version_ref
+    ON verses(LOWER(version_id), book_number, chapter, verse_number)`,
+
+  `CREATE INDEX IF NOT EXISTS idx_books_lower_version
+    ON books(LOWER(version_id), book_number)`,
+
   // Full-text search index on verse text
   `CREATE VIRTUAL TABLE IF NOT EXISTS verses_fts USING fts5(
     text,
