@@ -2,7 +2,7 @@
  * All SQL statements to create the database tables.
  * Run in order — foreign keys depend on prior tables.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /** Per-chapter progress for reading plan days (schema version 2) */
 export const READING_PLAN_DAY_CHAPTERS_SQL = `CREATE TABLE IF NOT EXISTS reading_plan_day_chapters (
@@ -60,6 +60,12 @@ export const SCHEMA_MIGRATIONS: SchemaMigration[] = [
     // load by readingPlanService.ensurePlanChapters(), which needs the schedule
     // generator; BACKFILL_DAY_CHAPTER_SQL copies each day's completion.
     statements: [READING_PLAN_DAY_CHAPTERS_SQL],
+  },
+  {
+    version: 3,
+    description: 'Remind until the day is done',
+    // NULL: one reminder a day; 1-3: repeat every N hours until the day's reading is done
+    addColumns: [{ table: 'reading_plans', column: 'reminder_repeat_hours', definition: 'INTEGER' }],
   },
 ];
 
@@ -330,6 +336,7 @@ export const CREATE_TABLES_SQL = [
     is_active       INTEGER DEFAULT 1,
     reminder_time   TEXT,
     reminder_enabled INTEGER DEFAULT 0,
+    reminder_repeat_hours INTEGER,
     current_day     INTEGER DEFAULT 1,
     created_at      TEXT DEFAULT (datetime('now'))
   )`,

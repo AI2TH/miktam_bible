@@ -3,7 +3,7 @@ import { generateUUID } from '../utils/uuid';
 import { CHAPTERS_PER_BOOK } from '../stores/readerStore';
 import { getBookName, getBookAbbreviation } from '../utils/bookTranslations';
 import { addDays, format, parseISO } from 'date-fns';
-import { syncReadingPlanNotification, cancelReadingPlanNotification } from './notificationService';
+import { syncReadingPlanNotification } from './notificationService';
 import { BACKFILL_DAY_CHAPTER_SQL } from '../database/schema';
 import {
   ChapterRef,
@@ -11,6 +11,8 @@ import {
   chaptersFromDayRange,
   summarizeDayProgress,
 } from './readingPlanProgress';
+
+import { normalizeRepeatHours } from './reminderSchedule';
 
 export type { ChapterRef, PlanDayChapter } from './readingPlanProgress';
 
@@ -101,6 +103,8 @@ export interface ReadingPlan {
   /** 'HH:mm' chosen by the user, or null: no reminder until a time is picked */
   reminderTime: string | null;
   reminderEnabled: boolean;
+  /** Keep reminding every N hours until the day's reading is done; null for one reminder a day */
+  reminderRepeatHours: number | null;
   currentDay: number;
   completedDaysCount: number;
   progressPercentage: number;
@@ -173,6 +177,7 @@ export async function getActiveReadingPlan(): Promise<ReadingPlan | null> {
       reminderTime: planRow.reminder_time || null,
       // A reminder needs a time; without one it is off whatever the flag says
       reminderEnabled: planRow.reminder_enabled === 1 && !!planRow.reminder_time,
+      reminderRepeatHours: normalizeRepeatHours(planRow.reminder_repeat_hours),
       currentDay: calendarDay?.day || planRow.current_day || 1,
       completedDaysCount,
       progressPercentage,
@@ -561,7 +566,8 @@ export async function startReadingPlan(
     durationDays?: number;
     scope?: 'whole' | 'nt' | 'ot' | 'gospels' | 'wisdom';
     startDate?: string;
-  }
+  },
+  reminderRepeatHours: number | null = null
 ): Promise<ReadingPlan> {
   const db = getDatabase();
   const planDef = READING_PLAN_DEFINITIONS[planType];
@@ -570,6 +576,7 @@ export async function startReadingPlan(
 
   const finalTitle = customConfig?.title || planDef.title;
   const reminderOn = reminderEnabled && !!reminderTime;
+  const repeatHours = normalizeRepeatHours(reminderRepeatHours);
   const finalDuration = customConfig?.durationDays || planDef.durationDays;
 
   // Deactivate any existing active plans
@@ -577,9 +584,9 @@ export async function startReadingPlan(
 
   // Insert new plan
   await db.runAsync(
-    `INSERT INTO reading_plans (id, plan_type, title, duration_days, start_date, is_active, reminder_time, reminder_enabled, current_day)
-     VALUES (?, ?, ?, ?, ?, 1, ?, ?, 1)`,
-    [planId, planType, finalTitle, finalDuration, todayStr, reminderTime, reminderOn ? 1 : 0]
+    `INSERT INTO reading_plans (id, plan_type, title, duration_days, start_date, is_active, reminder_time, reminder_enabled, reminder_repeat_hours, current_day)
+     VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, 1)`,
+    [planId, planType, finalTitle, finalDuration, todayStr, reminderTime, reminderOn ? 1 : 0, repeatHours]
   );
 
   // Generate and insert daily chapters with calendar dates
@@ -624,6 +631,7 @@ export async function startReadingPlan(
     isActive: true,
     reminderTime,
     reminderEnabled: reminderOn,
+    reminderRepeatHours: repeatHours,
     currentDay: 1,
     completedDaysCount: 0,
     progressPercentage: 0,
@@ -820,20 +828,33 @@ function regenerateDayChapters(
 export async function cancelReadingPlan(planId: string): Promise<void> {
   const db = getDatabase();
   await db.runAsync('UPDATE reading_plans SET is_active = 0 WHERE id = ?', [planId]);
-  await cancelReadingPlanNotification();
+  // Goes through the same queue as every other sync, so a sync already running
+  // cannot re-add reminders; with no active plan it cancels them all.
+  await syncReadingPlanNotification();
 }
 
-/** Update reminder time & enabled status. A reminder can only be on with a time. */
+/**
+ * Update reminder time, enabled status and the "remind until done" interval.
+ * A reminder can only be on with a time. Leave `repeatHours` undefined to keep
+ * the current interval.
+ */
 export async function updatePlanReminder(
   planId: string,
   enabled: boolean,
-  reminderTime: string | null
+  reminderTime: string | null,
+  repeatHours?: number | null
 ): Promise<void> {
   const db = getDatabase();
   await db.runAsync(
     'UPDATE reading_plans SET reminder_enabled = ?, reminder_time = ? WHERE id = ?',
     [enabled && reminderTime ? 1 : 0, reminderTime, planId]
   );
+  if (repeatHours !== undefined) {
+    await db.runAsync('UPDATE reading_plans SET reminder_repeat_hours = ? WHERE id = ?', [
+      normalizeRepeatHours(repeatHours),
+      planId,
+    ]);
+  }
 
   // Synchronize notifications
   await syncReadingPlanNotification(planId);

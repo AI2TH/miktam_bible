@@ -92,9 +92,10 @@ export default function PlansScreen() {
       durationDays?: number;
       scope?: 'whole' | 'nt' | 'ot' | 'gospels' | 'wisdom';
       startDate?: string;
-    }
+    },
+    reminderRepeatHours?: number | null
   ) => {
-    const newPlan = await startReadingPlan(type, reminderTime, reminderEnabled, customConfig);
+    const newPlan = await startReadingPlan(type, reminderTime, reminderEnabled, customConfig, reminderRepeatHours ?? null);
     setReadingPlan(newPlan);
     loadPlanData();
     Alert.alert(
@@ -153,9 +154,13 @@ export default function PlansScreen() {
     );
   };
 
-  const handleUpdatePlanReminder = async (enabled: boolean, timeStr: string | null) => {
+  const handleUpdatePlanReminder = async (
+    enabled: boolean,
+    timeStr: string | null,
+    repeatHours?: number | null
+  ) => {
     if (!readingPlan) return;
-    await updatePlanReminder(readingPlan.id, enabled, timeStr);
+    await updatePlanReminder(readingPlan.id, enabled, timeStr, repeatHours);
     loadPlanData();
   };
 

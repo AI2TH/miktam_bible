@@ -3,6 +3,14 @@ import { Platform } from 'react-native';
 import { format, addDays } from 'date-fns';
 import { getDatabase } from './database';
 import { loadVerseOfTheDay } from './verseOfTheDayService';
+import { PLAN_DAYS_WITH_PROGRESS_SQL } from '../database/schema';
+import {
+  PLAN_REMINDER_PREFIX,
+  ReminderPlanDay,
+  diffReminders,
+  parseReminderTime,
+  planReminders,
+} from './reminderSchedule';
 
 // Set up default notification behavior
 Notifications.setNotificationHandler({
@@ -161,14 +169,26 @@ export async function cancelVotdNotifications(): Promise<void> {
 }
 
 /**
- * Synchronize the reading plan reminder notification dynamically.
- * - If today's reading is already completed: cancels pending notification for today,
- *   and schedules reminder for tomorrow with the NEXT uncompleted reading (e.g. Day 4).
- * - If today's reading is pending: schedules reminder for today with today's reading.
- * - Never shows stale "Genesis 1-3" when user is on a later day!
- * - Never says reading is pending when the user already marked it completed!
+ * Bring the scheduled reading-plan reminders in line with the plan.
+ *
+ * Reminders are pre-scheduled with date triggers for the next
+ * REMINDER_WINDOW_DAYS days (see reminderSchedule.ts): the chosen time, plus a
+ * repeat every N hours until midnight when "keep reminding me until today's
+ * reading is done" is on. Days that are complete get none, so calling this
+ * after the last chapter of a day is marked read cancels the rest of that
+ * day's reminders. Called on every completion or chapter change, on reminder
+ * changes, when the planner opens and at app start. Calls run one at a time so
+ * a slower, older sync can never re-add reminders a newer one removed.
  */
-export async function syncReadingPlanNotification(planId?: string): Promise<void> {
+export function syncReadingPlanNotification(planId?: string): Promise<void> {
+  const run = syncQueue.then(() => syncReadingPlanNotificationNow(planId));
+  syncQueue = run.catch(() => {});
+  return run;
+}
+
+let syncQueue: Promise<void> = Promise.resolve();
+
+async function syncReadingPlanNotificationNow(planId?: string): Promise<void> {
   if (Platform.OS === 'web') return;
 
   try {
@@ -188,137 +208,67 @@ export async function syncReadingPlanNotification(planId?: string): Promise<void
       );
     }
 
-    // Always clear existing reading plan notifications first
-    await cancelReadingPlanNotification();
-
-    if (!plan || plan.reminder_enabled !== 1) {
-      return;
-    }
-
-    const hasPermission = await requestNotificationPermissions();
-    if (!hasPermission) return;
-
-    const todayStr = format(new Date(), 'yyyy-MM-dd');
-
-    // 2. Query today's scheduled reading
-    const todayRow = await db.getFirstAsync<any>(
-      'SELECT * FROM reading_plan_days WHERE plan_id = ? AND scheduled_date = ? LIMIT 1',
-      [plan.id, todayStr]
-    );
-
-    // 3. Query earliest uncompleted reading
-    const nextUncompletedRow = await db.getFirstAsync<any>(
-      'SELECT * FROM reading_plan_days WHERE plan_id = ? AND is_completed = 0 ORDER BY day_number ASC LIMIT 1',
-      [plan.id]
-    );
+    const scheduled = (await Notifications.getAllScheduledNotificationsAsync())
+      .filter((n) => n.identifier?.startsWith(PLAN_REMINDER_PREFIX))
+      .map((n) => ({ id: n.identifier, title: n.content?.title, body: n.content?.body }));
 
     // Reminders stay off until the user picks a time; there is no default
-    const [hourStr, minStr] = String(plan.reminder_time || '').split(':');
-    const reminderHour = parseInt(hourStr, 10);
-    const reminderMin = parseInt(minStr, 10);
-    if (
-      !Number.isInteger(reminderHour) || reminderHour < 0 || reminderHour > 23 ||
-      !Number.isInteger(reminderMin) || reminderMin < 0 || reminderMin > 59
-    ) {
+    const reminderOn = !!plan && plan.reminder_enabled === 1 && !!parseReminderTime(plan.reminder_time);
+    if (!reminderOn || !(await requestNotificationPermissions())) {
+      for (const n of scheduled) await Notifications.cancelScheduledNotificationAsync(n.id);
       return;
     }
 
-    const isTodayDone = todayRow ? todayRow.is_completed === 1 : false;
+    // 2. Every day of the plan with its chapter progress
+    const rows = await db.getAllAsync<any>(PLAN_DAYS_WITH_PROGRESS_SQL, [plan.id]);
+    const days: ReminderPlanDay[] = rows.map((r) => {
+      const total = r.chapter_count || 0;
+      const read = r.chapters_read || 0;
+      const isCompleted = r.is_completed === 1 || (total > 0 && read === total);
+      return {
+        dayNumber: r.day_number,
+        scheduledDate: r.scheduled_date,
+        isCompleted,
+        readingLabel: r.reading_label,
+        chaptersRead: isCompleted ? Math.max(total, 1) : read,
+        chapterCount: Math.max(total, 1),
+      };
+    });
 
-    if (isTodayDone) {
-      // User has already completed today's scripture!
-      // Do NOT send a "reading pending" notification today.
-      if (!nextUncompletedRow) {
-        // Entire plan completed!
-        return;
-      }
+    // 3. What should be scheduled, and what to cancel
+    const planned = planReminders({
+      now: new Date(),
+      reminderTime: plan.reminder_time,
+      repeatEveryHours: plan.reminder_repeat_hours,
+      planTitle: plan.title,
+      days,
+    });
+    const { cancel, schedule } = diffReminders(scheduled, planned);
 
-      // Schedule notification for tomorrow with next uncompleted day's reading
-      const now = new Date();
-      const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, reminderHour, reminderMin, 0);
-
+    for (const id of cancel) {
+      await Notifications.cancelScheduledNotificationAsync(id);
+    }
+    for (const r of schedule) {
+      // Same identifier replaces the earlier notification (updated progress text)
       await Notifications.scheduleNotificationAsync({
-        identifier: 'miktam_reading_plan_reminder',
+        identifier: r.id,
         content: {
-          title: `📖 ${plan.title} • Day ${nextUncompletedRow.day_number}`,
-          body: `Tomorrow's reading: ${nextUncompletedRow.reading_label}. Keep your study streak going!`,
+          title: r.title,
+          body: r.body,
           sound: true,
           color: '#C9A55C',
-          data: {
-            type: 'plan_reading',
-            planId: plan.id,
-            dayNumber: nextUncompletedRow.day_number,
-            bookNumber: nextUncompletedRow.book_number,
-            chapter: nextUncompletedRow.start_chapter,
-          },
+          data: { type: 'plan_reading', planId: plan.id, dayNumber: r.dayNumber },
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DATE,
-          date: tomorrow,
+          date: r.fireAt,
           channelId: 'reading_plan',
         },
       });
-      console.log(`[Notifications] Today complete. Next Day ${nextUncompletedRow.day_number} scheduled for tomorrow at ${plan.reminder_time}`);
-    } else {
-      // Today's reading is pending!
-      const targetDay = todayRow || nextUncompletedRow;
-      if (!targetDay) return;
-
-      const now = new Date();
-      const todayReminderTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), reminderHour, reminderMin, 0);
-      const isFutureToday = todayReminderTime.getTime() > now.getTime();
-
-      if (isFutureToday) {
-        // Reminder time hasn't passed today -> schedule for today
-        await Notifications.scheduleNotificationAsync({
-          identifier: 'miktam_reading_plan_reminder',
-          content: {
-            title: `⏳ Reading Pending: ${plan.title}`,
-            body: `Day ${targetDay.day_number} (${targetDay.reading_label}) is pending. Take a moment to read and grow!`,
-            sound: true,
-            color: '#C9A55C',
-            data: {
-              type: 'plan_reading',
-              planId: plan.id,
-              dayNumber: targetDay.day_number,
-              bookNumber: targetDay.book_number,
-              chapter: targetDay.start_chapter,
-            },
-          },
-          trigger: {
-            type: Notifications.SchedulableTriggerInputTypes.DATE,
-            date: todayReminderTime,
-            channelId: 'reading_plan',
-          },
-        });
-        console.log(`[Notifications] Today pending. Scheduled for today at ${plan.reminder_time}`);
-      } else {
-        // Reminder time has already passed today -> schedule recurring daily trigger with current target day
-        await Notifications.scheduleNotificationAsync({
-          identifier: 'miktam_reading_plan_reminder',
-          content: {
-            title: `⏳ Reading Pending: ${plan.title}`,
-            body: `Day ${targetDay.day_number} (${targetDay.reading_label}) is pending. Don't forget your daily scripture!`,
-            sound: true,
-            color: '#C9A55C',
-            data: {
-              type: 'plan_reading',
-              planId: plan.id,
-              dayNumber: targetDay.day_number,
-              bookNumber: targetDay.book_number,
-              chapter: targetDay.start_chapter,
-            },
-          },
-          trigger: {
-            type: Notifications.SchedulableTriggerInputTypes.DAILY,
-            hour: reminderHour,
-            minute: reminderMin,
-            channelId: 'reading_plan',
-          },
-        });
-        console.log(`[Notifications] Reminder time passed today. Scheduled daily recurring for ${plan.reminder_time}`);
-      }
     }
+    console.log(
+      `[Notifications] Plan reminders: ${planned.length} scheduled, ${cancel.length} cancelled, ${schedule.length} (re)written`
+    );
   } catch (e) {
     console.warn('[Notifications] Failed to sync reading plan notification:', e);
   }
@@ -330,34 +280,13 @@ export async function cancelReadingPlanNotification(): Promise<void> {
   try {
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
     for (const notif of scheduled) {
-      if (notif.identifier && notif.identifier.startsWith('miktam_reading_plan_')) {
+      if (notif.identifier && notif.identifier.startsWith(PLAN_REMINDER_PREFIX)) {
         await Notifications.cancelScheduledNotificationAsync(notif.identifier);
       }
     }
   } catch (e) {
     console.warn('[Notifications] Failed to cancel reading plan notification:', e);
   }
-}
-
-/** Schedule a generic daily reminder (compatibility alias) */
-export async function scheduleDailyReminder(hour: number, minute: number): Promise<string> {
-  if (Platform.OS === 'web') return '';
-  const id = await Notifications.scheduleNotificationAsync({
-    identifier: 'miktam_reading_plan_reminder',
-    content: {
-      title: 'Time for your Daily Scripture study! 📖',
-      body: 'Keep your reading streak alive. Take a few minutes to read and reflect.',
-      sound: true,
-      color: '#C9A55C',
-    },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.DAILY,
-      hour,
-      minute,
-      channelId: 'reading_plan',
-    },
-  });
-  return id;
 }
 
 /** Cancel all scheduled notifications */

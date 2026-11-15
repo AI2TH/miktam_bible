@@ -25,6 +25,7 @@ import {
 } from '../../services/readingPlanService';
 import { firstUnreadChapter, formatDayProgress } from '../../services/readingPlanProgress';
 import { getBookAbbreviation } from '../../utils/bookTranslations';
+import { REPEAT_INTERVAL_OPTIONS } from '../../services/reminderSchedule';
 
 interface ReadingPlanSectionProps {
   plan: ReadingPlan | null;
@@ -42,13 +43,14 @@ interface ReadingPlanSectionProps {
       durationDays?: number;
       scope?: 'whole' | 'nt' | 'ot' | 'gospels' | 'wisdom';
       startDate?: string;
-    }
+    },
+    reminderRepeatHours?: number | null
   ) => Promise<void>;
   onCompleteDay: (dayNumber: number) => Promise<void>;
   /** Mark one chapter of a day read or unread (seq = position within the day) */
   onToggleChapter: (dayNumber: number, seq: number, isRead: boolean) => Promise<void>;
   onCancelPlan: () => void | Promise<void>;
-  onUpdateReminder: (enabled: boolean, time: string | null) => Promise<void>;
+  onUpdateReminder: (enabled: boolean, time: string | null, repeatHours?: number | null) => Promise<void>;
   onNavigateToReading: (bookNumber: number, chapter: number) => void;
 }
 
@@ -270,6 +272,63 @@ export function CustomTimeSelector({
   );
 }
 
+function repeatLabel(hours: number): string {
+  return hours === 1 ? 'Every hour' : `Every ${hours} hours`;
+}
+
+/**
+ * "Keep reminding me until today's reading is done": Off, or repeat every
+ * 1, 2 or 3 hours from the reminder time until midnight.
+ */
+function RepeatUntilDoneSelector({
+  value,
+  onChange,
+}: {
+  value: number | null;
+  onChange: (hours: number | null) => void;
+}) {
+  const { colors } = useTheme();
+  const options: (number | null)[] = [null, ...REPEAT_INTERVAL_OPTIONS];
+  return (
+    <View style={{ marginTop: 12 }}>
+      <Text variant="bodySmall" style={{ fontWeight: 'bold' }}>
+        Keep reminding me until today's reading is done
+      </Text>
+      <Text variant="caption" color="textTertiary" style={{ marginTop: 2 }}>
+        Repeats from your reminder time until midnight, and stops as soon as every chapter of the day is read.
+      </Text>
+      <View style={styles.presetChipsRow}>
+        {options.map((hours) => {
+          const selected = value === hours;
+          return (
+            <TouchableOpacity
+              key={String(hours)}
+              onPress={() => onChange(hours)}
+              style={[
+                styles.presetChip,
+                {
+                  backgroundColor: selected ? colors.primary + '25' : colors.surface,
+                  borderColor: selected ? colors.primary : colors.border,
+                },
+              ]}
+              accessibilityRole="radio"
+              accessibilityState={{ selected }}
+            >
+              <Text
+                variant="caption"
+                style={{ fontSize: 11, fontWeight: selected ? '700' : '500' }}
+                color={selected ? 'primary' : 'textSecondary'}
+              >
+                {hours === null ? 'Off' : repeatLabel(hours)}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 /** "Mon, 10 Nov" for a 'yyyy-MM-dd' plan date */
 function formatPlanDate(dateKey?: string): string | null {
   if (!dateKey) return null;
@@ -476,10 +535,12 @@ export function ReadingPlanSection({
   // No reminder until the user picks a time
   const [reminderTime, setReminderTime] = useState<string | null>(null);
   const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [reminderRepeatHours, setReminderRepeatHours] = useState<number | null>(null);
 
   // Edit Time Modal for active plan
   const [editTimeModalVisible, setEditTimeModalVisible] = useState(false);
   const [editTimeValue, setEditTimeValue] = useState<string | null>(plan?.reminderTime ?? null);
+  const [editRepeatHours, setEditRepeatHours] = useState<number | null>(plan?.reminderRepeatHours ?? null);
 
   // Full Schedule Explorer Modal
   const [scheduleExplorerVisible, setScheduleExplorerVisible] = useState(false);
@@ -520,17 +581,19 @@ export function ReadingPlanSection({
       selectedPlanType,
       reminderEnabled ? reminderTime : null,
       reminderEnabled && !!reminderTime,
-      customConfig
+      customConfig,
+      reminderEnabled && reminderTime ? reminderRepeatHours : null
     );
     setSelectorVisible(false);
     setReminderTime(null);
     setReminderEnabled(false);
+    setReminderRepeatHours(null);
   };
 
   /** Saving a picked time turns the reminder on */
   const handleSaveActiveReminderTime = async () => {
     if (!plan || !editTimeValue) return;
-    await onUpdateReminder(true, editTimeValue);
+    await onUpdateReminder(true, editTimeValue, editRepeatHours);
     setEditTimeModalVisible(false);
   };
 
@@ -883,6 +946,7 @@ export function ReadingPlanSection({
               activeOpacity={0.7}
               onPress={() => {
                 setEditTimeValue(plan.reminderTime);
+                setEditRepeatHours(plan.reminderRepeatHours);
                 setEditTimeModalVisible(true);
               }}
               accessibilityRole="button"
@@ -905,7 +969,11 @@ export function ReadingPlanSection({
                   <Ionicons name="pencil" size={12} color={colors.primary} />
                 </View>
                 <Text variant="caption" color="textTertiary" style={{ fontSize: 10 }}>
-                  {activeReminderOn ? 'Tap to change the time' : 'No reminder until you pick a time'}
+                  {!activeReminderOn
+                    ? 'No reminder until you pick a time'
+                    : plan.reminderRepeatHours
+                    ? `${repeatLabel(plan.reminderRepeatHours)} until the day's reading is done`
+                    : 'Tap to change the time'}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -1089,6 +1157,7 @@ export function ReadingPlanSection({
                     Pick a time to turn the reminder on. Without one, no reminder is sent.
                   </Text>
                 )}
+                <RepeatUntilDoneSelector value={reminderRepeatHours} onChange={setReminderRepeatHours} />
               </View>
             )}
 
@@ -1142,6 +1211,7 @@ export function ReadingPlanSection({
             </Text>
 
             <CustomTimeSelector value={editTimeValue} onChange={setEditTimeValue} />
+            <RepeatUntilDoneSelector value={editRepeatHours} onChange={setEditRepeatHours} />
 
             <View style={styles.modalActions}>
               {activeReminderOn ? (
