@@ -328,8 +328,8 @@ export const CREATE_TABLES_SQL = [
     duration_days   INTEGER NOT NULL,
     start_date      TEXT NOT NULL,
     is_active       INTEGER DEFAULT 1,
-    reminder_time   TEXT DEFAULT '08:00',
-    reminder_enabled INTEGER DEFAULT 1,
+    reminder_time   TEXT,
+    reminder_enabled INTEGER DEFAULT 0,
     current_day     INTEGER DEFAULT 1,
     created_at      TEXT DEFAULT (datetime('now'))
   )`,

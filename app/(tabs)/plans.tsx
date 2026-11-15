@@ -85,7 +85,7 @@ export default function PlansScreen() {
 
   const handleStartPlan = async (
     type: PlanType,
-    reminderTime: string,
+    reminderTime: string | null,
     reminderEnabled: boolean,
     customConfig?: {
       title?: string;
@@ -97,7 +97,12 @@ export default function PlansScreen() {
     const newPlan = await startReadingPlan(type, reminderTime, reminderEnabled, customConfig);
     setReadingPlan(newPlan);
     loadPlanData();
-    Alert.alert('Reading Plan Started', `Your ${newPlan.title} has begun! Daily reading has been set on your calendar.`);
+    Alert.alert(
+      'Reading Plan Started',
+      newPlan.reminderEnabled
+        ? `Your ${newPlan.title} has begun! Daily reading has been set on your calendar.`
+        : `Your ${newPlan.title} has begun! Daily reading has been set on your calendar. Reminders are off until you set a time in the planner.`
+    );
   };
 
   const handleCompletePlanDay = async (dayNumber: number) => {
@@ -148,7 +153,7 @@ export default function PlansScreen() {
     );
   };
 
-  const handleUpdatePlanReminder = async (enabled: boolean, timeStr: string) => {
+  const handleUpdatePlanReminder = async (enabled: boolean, timeStr: string | null) => {
     if (!readingPlan) return;
     await updatePlanReminder(readingPlan.id, enabled, timeStr);
     loadPlanData();

@@ -35,7 +35,7 @@ interface ReadingPlanSectionProps {
   upcomingDays?: ReadingPlanDay[];
   onStartPlan: (
     type: PlanType,
-    reminderTime: string,
+    reminderTime: string | null,
     reminderEnabled: boolean,
     customConfig?: {
       title?: string;
@@ -48,7 +48,7 @@ interface ReadingPlanSectionProps {
   /** Mark one chapter of a day read or unread (seq = position within the day) */
   onToggleChapter: (dayNumber: number, seq: number, isRead: boolean) => Promise<void>;
   onCancelPlan: () => void | Promise<void>;
-  onUpdateReminder: (enabled: boolean, time: string) => Promise<void>;
+  onUpdateReminder: (enabled: boolean, time: string | null) => Promise<void>;
   onNavigateToReading: (bookNumber: number, chapter: number) => void;
 }
 
@@ -60,38 +60,51 @@ const SCOPE_OPTIONS: { id: 'whole' | 'nt' | 'ot' | 'gospels' | 'wisdom'; label: 
   { id: 'wisdom', label: '💎 Psalms & Wisdom' },
 ];
 
-/** Convert 24-hour "HH:mm" string to formatted 12-hour AM/PM string */
-function formatTo12Hour(time24: string): string {
-  if (!time24) return '08:00 AM';
+/** Parse 'HH:mm'; null when missing or invalid */
+function parseTime24(time24: string | null | undefined): { h: number; m: number } | null {
+  if (!time24) return null;
   const [hStr, mStr] = time24.split(':');
-  let h = parseInt(hStr || '8', 10);
-  let m = parseInt(mStr || '0', 10);
-  if (isNaN(h)) h = 8;
-  if (isNaN(m)) m = 0;
-  const period = h >= 12 ? 'PM' : 'AM';
-  const displayH = h % 12 || 12;
-  const displayM = m.toString().padStart(2, '0');
-  return `${displayH}:${displayM} ${period}`;
+  const h = parseInt(hStr, 10);
+  const m = parseInt(mStr, 10);
+  if (!Number.isInteger(h) || !Number.isInteger(m) || h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return { h, m };
+}
+
+/** "7:30 AM" for '07:30'; null when no time is set */
+export function formatTo12Hour(time24: string | null | undefined): string | null {
+  const t = parseTime24(time24);
+  if (!t) return null;
+  const period = t.h >= 12 ? 'PM' : 'AM';
+  const displayH = t.h % 12 || 12;
+  return `${displayH}:${t.m.toString().padStart(2, '0')} ${period}`;
+}
+
+/** The current time rounded up to the next 5 minutes: where the steppers start when no time is set */
+function nextFiveMinuteSlot(): { h: number; m: number } {
+  const d = new Date();
+  const total = Math.ceil((d.getHours() * 60 + d.getMinutes() + 1) / 5) * 5;
+  return { h: Math.floor(total / 60) % 24, m: total % 60 };
 }
 
 /**
  * Custom Time Selector Component
- * Allows user to set ANY hour and minute (with steppers, AM/PM, and quick presets)
+ * Allows user to set ANY hour and minute (with steppers, AM/PM, and quick presets).
+ * `value` null means no time picked yet: it shows "--:--" and nothing is saved
+ * until the user changes it.
  */
-function CustomTimeSelector({
+export function CustomTimeSelector({
   value,
   onChange,
 }: {
-  value: string;
+  value: string | null;
   onChange: (time24: string) => void;
 }) {
   const { colors, spacing, borderRadius } = useTheme();
 
-  const [hStr, mStr] = (value || '08:00').split(':');
-  let rawH = parseInt(hStr || '8', 10);
-  let rawM = parseInt(mStr || '0', 10);
-  if (isNaN(rawH)) rawH = 8;
-  if (isNaN(rawM)) rawM = 0;
+  const picked = parseTime24(value);
+  const base = picked ?? nextFiveMinuteSlot();
+  const rawH = base.h;
+  const rawM = base.m;
 
   const isPM = rawH >= 12;
   const hour12 = rawH % 12 || 12;
@@ -120,7 +133,7 @@ function CustomTimeSelector({
   };
 
   const togglePeriod = (targetPM: boolean) => {
-    if (targetPM !== isPM) {
+    if (!picked || targetPM !== isPM) {
       updateTime(hour12, minute, targetPM);
     }
   };
@@ -152,7 +165,7 @@ function CustomTimeSelector({
             <Ionicons name="chevron-up" size={18} color={colors.primary} />
           </TouchableOpacity>
           <Text variant="h1" style={{ fontWeight: '700', minWidth: 44, textAlign: 'center' }}>
-            {hour12.toString().padStart(2, '0')}
+            {picked ? hour12.toString().padStart(2, '0') : '--'}
           </Text>
           <TouchableOpacity
             style={[styles.stepperBtn, { backgroundColor: colors.surfaceElevated }]}
@@ -178,7 +191,7 @@ function CustomTimeSelector({
             <Ionicons name="chevron-up" size={18} color={colors.primary} />
           </TouchableOpacity>
           <Text variant="h1" style={{ fontWeight: '700', minWidth: 44, textAlign: 'center' }}>
-            {minute.toString().padStart(2, '0')}
+            {picked ? minute.toString().padStart(2, '0') : '--'}
           </Text>
           <TouchableOpacity
             style={[styles.stepperBtn, { backgroundColor: colors.surfaceElevated }]}
@@ -196,14 +209,14 @@ function CustomTimeSelector({
           <TouchableOpacity
             style={[
               styles.ampmBtn,
-              !isPM ? { backgroundColor: colors.primary } : { backgroundColor: colors.surfaceElevated },
+              picked && !isPM ? { backgroundColor: colors.primary } : { backgroundColor: colors.surfaceElevated },
             ]}
             onPress={() => togglePeriod(false)}
           >
             <Text
               variant="caption"
               style={{ fontWeight: 'bold' }}
-              color={!isPM ? 'inverse' : 'textPrimary'}
+              color={picked && !isPM ? 'inverse' : 'textPrimary'}
             >
               AM
             </Text>
@@ -211,14 +224,14 @@ function CustomTimeSelector({
           <TouchableOpacity
             style={[
               styles.ampmBtn,
-              isPM ? { backgroundColor: colors.primary } : { backgroundColor: colors.surfaceElevated },
+              picked && isPM ? { backgroundColor: colors.primary } : { backgroundColor: colors.surfaceElevated },
             ]}
             onPress={() => togglePeriod(true)}
           >
             <Text
               variant="caption"
               style={{ fontWeight: 'bold' }}
-              color={isPM ? 'inverse' : 'textPrimary'}
+              color={picked && isPM ? 'inverse' : 'textPrimary'}
             >
               PM
             </Text>
@@ -460,12 +473,13 @@ export function ReadingPlanSection({
   // Selector modal state
   const [selectorVisible, setSelectorVisible] = useState(false);
   const [selectedPlanType, setSelectedPlanType] = useState<PlanType>('1_year');
-  const [reminderTime, setReminderTime] = useState('08:00');
-  const [reminderEnabled, setReminderEnabled] = useState(true);
+  // No reminder until the user picks a time
+  const [reminderTime, setReminderTime] = useState<string | null>(null);
+  const [reminderEnabled, setReminderEnabled] = useState(false);
 
   // Edit Time Modal for active plan
   const [editTimeModalVisible, setEditTimeModalVisible] = useState(false);
-  const [editTimeValue, setEditTimeValue] = useState(plan?.reminderTime || '08:00');
+  const [editTimeValue, setEditTimeValue] = useState<string | null>(plan?.reminderTime ?? null);
 
   // Full Schedule Explorer Modal
   const [scheduleExplorerVisible, setScheduleExplorerVisible] = useState(false);
@@ -502,15 +516,32 @@ export function ReadingPlanSection({
         scope: customScope,
       };
     }
-    await onStartPlan(selectedPlanType, reminderTime, reminderEnabled, customConfig);
+    await onStartPlan(
+      selectedPlanType,
+      reminderEnabled ? reminderTime : null,
+      reminderEnabled && !!reminderTime,
+      customConfig
+    );
     setSelectorVisible(false);
+    setReminderTime(null);
+    setReminderEnabled(false);
   };
 
+  /** Saving a picked time turns the reminder on */
   const handleSaveActiveReminderTime = async () => {
-    if (!plan) return;
-    await onUpdateReminder(plan.reminderEnabled, editTimeValue);
+    if (!plan || !editTimeValue) return;
+    await onUpdateReminder(true, editTimeValue);
     setEditTimeModalVisible(false);
   };
+
+  const handleTurnOffReminder = async () => {
+    if (!plan) return;
+    await onUpdateReminder(false, plan.reminderTime);
+    setEditTimeModalVisible(false);
+  };
+
+  const activeReminderLabel = plan ? formatTo12Hour(plan.reminderTime) : null;
+  const activeReminderOn = !!plan?.reminderEnabled && !!activeReminderLabel;
 
   const planTypes: PlanType[] = [
     '1_year',
@@ -851,32 +882,41 @@ export function ReadingPlanSection({
               style={styles.reminderInfo}
               activeOpacity={0.7}
               onPress={() => {
-                setEditTimeValue(plan.reminderTime || '08:00');
+                setEditTimeValue(plan.reminderTime);
                 setEditTimeModalVisible(true);
               }}
+              accessibilityRole="button"
+              accessibilityLabel={
+                activeReminderOn
+                  ? `Daily reminder at ${activeReminderLabel}. Change time`
+                  : 'Reminder off. Set a time'
+              }
             >
               <Ionicons
-                name={plan.reminderEnabled ? 'notifications' : 'notifications-off-outline'}
+                name={activeReminderOn ? 'notifications' : 'notifications-off-outline'}
                 size={18}
-                color={plan.reminderEnabled ? colors.primary : colors.textTertiary}
+                color={activeReminderOn ? colors.primary : colors.textTertiary}
               />
-              <View>
+              <View style={{ flexShrink: 1 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   <Text variant="caption" color="textPrimary" style={{ fontWeight: '700' }}>
-                    Daily Reminder: {formatTo12Hour(plan.reminderTime)}
+                    {activeReminderOn ? `Daily reminder: ${activeReminderLabel}` : 'Reminder: off. Set a time'}
                   </Text>
                   <Ionicons name="pencil" size={12} color={colors.primary} />
                 </View>
                 <Text variant="caption" color="textTertiary" style={{ fontSize: 10 }}>
-                  Tap to customize notification time
+                  {activeReminderOn ? 'Tap to change the time' : 'No reminder until you pick a time'}
                 </Text>
               </View>
             </TouchableOpacity>
-            <Switch
-              value={plan.reminderEnabled}
-              onValueChange={(val) => onUpdateReminder(val, plan.reminderTime)}
-              trackColor={{ false: colors.surfaceElevated, true: colors.primary }}
-            />
+            {/* The switch only appears once a time has been picked */}
+            {activeReminderLabel && (
+              <Switch
+                value={activeReminderOn}
+                onValueChange={(val) => onUpdateReminder(val, plan.reminderTime)}
+                trackColor={{ false: colors.surfaceElevated, true: colors.primary }}
+              />
+            )}
           </View>
         </Card>
       )}
@@ -1025,7 +1065,9 @@ export function ReadingPlanSection({
                   Daily Scripture Reminder
                 </Text>
                 <Text variant="caption" color="textSecondary">
-                  Delivers daily notification with current day's reading
+                  {reminderEnabled && reminderTime
+                    ? `Reminder at ${formatTo12Hour(reminderTime)} with the day's reading`
+                    : 'Reminder: off. Set a time'}
                 </Text>
               </View>
               <Switch
@@ -1042,6 +1084,11 @@ export function ReadingPlanSection({
                   Choose Notification Time:
                 </Text>
                 <CustomTimeSelector value={reminderTime} onChange={setReminderTime} />
+                {!reminderTime && (
+                  <Text variant="caption" color="textTertiary" style={{ marginTop: 6 }}>
+                    Pick a time to turn the reminder on. Without one, no reminder is sent.
+                  </Text>
+                )}
               </View>
             )}
 
@@ -1097,16 +1144,26 @@ export function ReadingPlanSection({
             <CustomTimeSelector value={editTimeValue} onChange={setEditTimeValue} />
 
             <View style={styles.modalActions}>
-              <Button
-                label="Cancel"
-                onPress={() => setEditTimeModalVisible(false)}
-                variant="outline"
-                style={{ flex: 1 }}
-              />
+              {activeReminderOn ? (
+                <Button
+                  label="Turn Off"
+                  onPress={handleTurnOffReminder}
+                  variant="outline"
+                  style={{ flex: 1 }}
+                />
+              ) : (
+                <Button
+                  label="Cancel"
+                  onPress={() => setEditTimeModalVisible(false)}
+                  variant="outline"
+                  style={{ flex: 1 }}
+                />
+              )}
               <Button
                 label="Save Time"
                 onPress={handleSaveActiveReminderTime}
                 variant="primary"
+                disabled={!editTimeValue}
                 style={{ flex: 1 }}
               />
             </View>

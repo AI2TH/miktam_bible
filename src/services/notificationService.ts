@@ -212,10 +212,16 @@ export async function syncReadingPlanNotification(planId?: string): Promise<void
       [plan.id]
     );
 
-    // Parse reminder hour & minute
-    const [hourStr, minStr] = (plan.reminder_time || '08:00').split(':');
-    const reminderHour = parseInt(hourStr || '8', 10);
-    const reminderMin = parseInt(minStr || '0', 10);
+    // Reminders stay off until the user picks a time; there is no default
+    const [hourStr, minStr] = String(plan.reminder_time || '').split(':');
+    const reminderHour = parseInt(hourStr, 10);
+    const reminderMin = parseInt(minStr, 10);
+    if (
+      !Number.isInteger(reminderHour) || reminderHour < 0 || reminderHour > 23 ||
+      !Number.isInteger(reminderMin) || reminderMin < 0 || reminderMin > 59
+    ) {
+      return;
+    }
 
     const isTodayDone = todayRow ? todayRow.is_completed === 1 : false;
 

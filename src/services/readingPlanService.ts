@@ -98,7 +98,8 @@ export interface ReadingPlan {
   durationDays: number;
   startDate: string;
   isActive: boolean;
-  reminderTime: string;
+  /** 'HH:mm' chosen by the user, or null: no reminder until a time is picked */
+  reminderTime: string | null;
   reminderEnabled: boolean;
   currentDay: number;
   completedDaysCount: number;
@@ -169,8 +170,9 @@ export async function getActiveReadingPlan(): Promise<ReadingPlan | null> {
       durationDays: planRow.duration_days,
       startDate: planRow.start_date,
       isActive: planRow.is_active === 1,
-      reminderTime: planRow.reminder_time || '08:00',
-      reminderEnabled: planRow.reminder_enabled === 1,
+      reminderTime: planRow.reminder_time || null,
+      // A reminder needs a time; without one it is off whatever the flag says
+      reminderEnabled: planRow.reminder_enabled === 1 && !!planRow.reminder_time,
       currentDay: calendarDay?.day || planRow.current_day || 1,
       completedDaysCount,
       progressPercentage,
@@ -546,11 +548,14 @@ export function getSchedulePreview(
   }));
 }
 
-/** Start a new reading plan (preset or custom) */
+/**
+ * Start a new reading plan (preset or custom). Reminders are off unless the
+ * user picked a time; there is no preset reminder time.
+ */
 export async function startReadingPlan(
   planType: PlanType,
-  reminderTime: string = '08:00',
-  reminderEnabled: boolean = true,
+  reminderTime: string | null = null,
+  reminderEnabled: boolean = false,
   customConfig?: {
     title?: string;
     durationDays?: number;
@@ -564,6 +569,7 @@ export async function startReadingPlan(
   const todayStr = customConfig?.startDate || format(new Date(), 'yyyy-MM-dd');
 
   const finalTitle = customConfig?.title || planDef.title;
+  const reminderOn = reminderEnabled && !!reminderTime;
   const finalDuration = customConfig?.durationDays || planDef.durationDays;
 
   // Deactivate any existing active plans
@@ -573,7 +579,7 @@ export async function startReadingPlan(
   await db.runAsync(
     `INSERT INTO reading_plans (id, plan_type, title, duration_days, start_date, is_active, reminder_time, reminder_enabled, current_day)
      VALUES (?, ?, ?, ?, ?, 1, ?, ?, 1)`,
-    [planId, planType, finalTitle, finalDuration, todayStr, reminderTime, reminderEnabled ? 1 : 0]
+    [planId, planType, finalTitle, finalDuration, todayStr, reminderTime, reminderOn ? 1 : 0]
   );
 
   // Generate and insert daily chapters with calendar dates
@@ -617,7 +623,7 @@ export async function startReadingPlan(
     startDate: todayStr,
     isActive: true,
     reminderTime,
-    reminderEnabled,
+    reminderEnabled: reminderOn,
     currentDay: 1,
     completedDaysCount: 0,
     progressPercentage: 0,
@@ -817,16 +823,16 @@ export async function cancelReadingPlan(planId: string): Promise<void> {
   await cancelReadingPlanNotification();
 }
 
-/** Update reminder time & enabled status */
+/** Update reminder time & enabled status. A reminder can only be on with a time. */
 export async function updatePlanReminder(
   planId: string,
   enabled: boolean,
-  reminderTime: string
+  reminderTime: string | null
 ): Promise<void> {
   const db = getDatabase();
   await db.runAsync(
     'UPDATE reading_plans SET reminder_enabled = ?, reminder_time = ? WHERE id = ?',
-    [enabled ? 1 : 0, reminderTime, planId]
+    [enabled && reminderTime ? 1 : 0, reminderTime, planId]
   );
 
   // Synchronize notifications
