@@ -128,6 +128,13 @@ export async function getActiveReadingPlan(): Promise<ReadingPlan | null> {
     const completedDaysCount = stats?.completed_count || 0;
     const progressPercentage = Math.round((completedDaysCount / planRow.duration_days) * 100);
 
+    // "Day X of N" follows the calendar, like getPlanDayNumberForDate(), so it moves
+    // on each day even when nothing is completed, and reading ahead does not move it.
+    const calendarDay = await db.getFirstAsync<{ day: number | null }>(
+      'SELECT MAX(day_number) AS day FROM reading_plan_days WHERE plan_id = ? AND scheduled_date <= ?',
+      [planRow.id, format(new Date(), 'yyyy-MM-dd')]
+    );
+
     return {
       id: planRow.id,
       planType: planRow.plan_type as PlanType,
@@ -137,7 +144,7 @@ export async function getActiveReadingPlan(): Promise<ReadingPlan | null> {
       isActive: planRow.is_active === 1,
       reminderTime: planRow.reminder_time || '08:00',
       reminderEnabled: planRow.reminder_enabled === 1,
-      currentDay: planRow.current_day || 1,
+      currentDay: calendarDay?.day || planRow.current_day || 1,
       completedDaysCount,
       progressPercentage,
     };
@@ -579,10 +586,15 @@ export async function completeDayReading(planId: string, dayNumber: number): Pro
     [now, planId, dayNumber]
   );
 
-  // Advance current_day in reading_plans
+  // current_day is the plan day scheduled for today. Catching up on a missed
+  // day or reading ahead must not move it (it used to become dayNumber + 1).
   await db.runAsync(
-    'UPDATE reading_plans SET current_day = ? WHERE id = ?',
-    [dayNumber + 1, planId]
+    `UPDATE reading_plans
+     SET current_day = COALESCE(
+       (SELECT MAX(day_number) FROM reading_plan_days WHERE plan_id = ? AND scheduled_date <= ?),
+       current_day)
+     WHERE id = ?`,
+    [planId, format(new Date(), 'yyyy-MM-dd'), planId]
   );
 
   // Synchronize dynamic notifications (cancels pending for today, schedules tomorrow with Day X+1)
