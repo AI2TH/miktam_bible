@@ -298,9 +298,9 @@ async function runPartitionPipeline(partitionKey) {
   });
 
   // C. YouVersion versions & languages
-  const yvVersions = require('../src/database/youversion_all_versions.json')
+  const yvVersions = require('./data/youversion_all_versions.json')
     .filter(v => conf.regex.test(v.language_tag || '') || conf.regex.test(v.abbreviation || ''));
-  const yvLanguages = require('../src/database/youversion_languages.json')
+  const yvLanguages = require('./data/youversion_languages.json')
     .filter(l => conf.regex.test(l.language_tag || ''));
 
   let newlyBuilt = 0;

@@ -30,8 +30,8 @@ async function syncCatalogFromOurDbs() {
   console.log('Fetching live git trees for all 5 AI2TH repositories...');
 
   // 1. Load metadata sources
-  const yvVersions = require('../src/database/youversion_all_versions.json');
-  const yvLanguages = require('../src/database/youversion_languages.json');
+  const yvVersions = require('./data/youversion_all_versions.json');
+  const yvLanguages = require('./data/youversion_languages.json');
   
   const yvVerMap = new Map();
   for (const v of yvVersions) {

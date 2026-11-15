@@ -14,8 +14,8 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 
-const yvLanguagesPath = path.resolve(__dirname, '../src/database/youversion_languages.json');
-const yvVersionsPath = path.resolve(__dirname, '../src/database/youversion_all_versions.json');
+const yvLanguagesPath = path.resolve(__dirname, './data/youversion_languages.json');
+const yvVersionsPath = path.resolve(__dirname, './data/youversion_all_versions.json');
 const catalogPath = path.resolve(__dirname, '../src/database/globalBibleCatalog.ts');
 
 const yvLanguages = JSON.parse(fs.readFileSync(yvLanguagesPath, 'utf8'));
