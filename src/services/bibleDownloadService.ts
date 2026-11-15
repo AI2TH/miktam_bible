@@ -485,7 +485,8 @@ async function downloadViaDatabaseAttach(
   const cleanPath = tempFileUri.replace(/^file:\/\//, '');
 
   try {
-    await db.execAsync(`ATTACH DATABASE '${cleanPath}' AS temp_src;`);
+    // Bind the path instead of interpolating it into SQL (it contains the version id)
+    await db.runAsync('ATTACH DATABASE ? AS temp_src', [cleanPath]);
 
     // Verify source database actually contains verses before importing
     const srcVerseCheck = await db.getFirstAsync<{ count: number }>(
