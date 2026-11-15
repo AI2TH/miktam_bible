@@ -72,6 +72,22 @@ export default function RootLayout() {
     );
   }
 
+  // Every screen needs the database; mounting them after a failed init would
+  // only crash on getDatabase(). Show the error instead.
+  if (initError) {
+    return (
+      <View style={splashStyles.container}>
+        <StatusBar style="light" />
+        <View style={splashStyles.content}>
+          <Text style={splashStyles.title}>MIKTAM BIBLE</Text>
+          <Text style={splashStyles.subtitle}>The Bible database could not be opened.</Text>
+          <Text style={splashStyles.errorText}>{initError}</Text>
+          <Text style={splashStyles.subtitle}>Please restart the app.</Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <>
       <StatusBar style={isDark ? 'light' : 'dark'} />
@@ -117,6 +133,12 @@ const splashStyles = StyleSheet.create({
     color: '#8A8A9E',
     letterSpacing: 1,
     marginBottom: 28,
+  },
+  errorText: {
+    fontSize: 12,
+    color: '#E57373',
+    textAlign: 'center',
+    marginBottom: 16,
   },
   spinner: {
     marginTop: 8,
