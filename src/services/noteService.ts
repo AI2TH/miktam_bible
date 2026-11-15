@@ -39,13 +39,8 @@ export async function addNote(
     [id, normVersion, bookNumber, chapter, verseNumber, content, now, now]
   );
 
-  // Sync to FTS virtual table
-  const row = await db.getFirstAsync<{ rowid: number }>('SELECT last_insert_rowid() as rowid');
-  const rowid = row?.rowid ?? 0;
-  await db.runAsync(
-    `INSERT INTO notes_fts (rowid, content) VALUES (?, ?)`,
-    [rowid, content]
-  );
+  // notes_fts is kept in sync by the notes_ai/notes_au/notes_ad triggers (schema.ts).
+  // Writing to it here as well corrupts the external-content FTS index.
 
   // Add to sync queue
   await db.runAsync(
@@ -62,22 +57,11 @@ export async function updateNote(id: string, content: string): Promise<void> {
   const db = getDatabase();
   const now = new Date().toISOString();
 
-  // Find the rowid for FTS update
-  const noteRow = await db.getFirstAsync<{ rowid: number }>('SELECT rowid FROM notes WHERE id = ?', [id]);
-  const rowid = noteRow?.rowid;
-
+  // FTS is updated by the notes_au trigger
   await db.runAsync(
     `UPDATE notes SET content = ?, updated_at = ?, is_synced = 0 WHERE id = ?`,
     [content, now, id]
   );
-
-  if (rowid !== undefined) {
-    // Update FTS
-    await db.runAsync(
-      `INSERT OR REPLACE INTO notes_fts (rowid, content) VALUES (?, ?)`,
-      [rowid, content]
-    );
-  }
 
   // Add to sync queue
   await db.runAsync(
@@ -91,14 +75,8 @@ export async function updateNote(id: string, content: string): Promise<void> {
 export async function deleteNote(id: string): Promise<void> {
   const db = getDatabase();
 
-  const noteRow = await db.getFirstAsync<{ rowid: number }>('SELECT rowid FROM notes WHERE id = ?', [id]);
-  const rowid = noteRow?.rowid;
-
+  // FTS is updated by the notes_ad trigger
   await db.runAsync('DELETE FROM notes WHERE id = ?', [id]);
-
-  if (rowid !== undefined) {
-    await db.runAsync(`DELETE FROM notes_fts WHERE rowid = ?`, [rowid]);
-  }
 
   await db.runAsync(
     `INSERT INTO sync_queue (table_name, record_id, action, payload) VALUES ('notes', ?, 'DELETE', '{}')`,

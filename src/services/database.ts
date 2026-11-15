@@ -147,6 +147,7 @@ async function openAndPrepareDatabase(): Promise<SQLite.SQLiteDatabase> {
 
   // Rebuild tables whose constraints predate the current schema
   await migrateRecordingsStatusConstraint(database);
+  await rebuildNotesSearchIndexOnce(database);
 
   // Set schema version
   await database.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
@@ -192,6 +193,22 @@ async function openAndPrepareDatabase(): Promise<SQLite.SQLiteDatabase> {
   db = database;
   isInitialized = true;
   return database;
+}
+
+/**
+ * Earlier versions of noteService wrote to notes_fts by hand on top of the
+ * notes_ai/notes_au/notes_ad triggers, which corrupts the external-content FTS
+ * index (stale or missing note search results). Rebuild it once from the notes table.
+ */
+async function rebuildNotesSearchIndexOnce(database: SQLite.SQLiteDatabase): Promise<void> {
+  const FLAG = 'notes_fts_rebuilt_v1';
+  try {
+    if ((await AsyncStorage.getItem(FLAG)) === '1') return;
+    await database.execAsync(`INSERT INTO notes_fts(notes_fts) VALUES('rebuild')`);
+    await AsyncStorage.setItem(FLAG, '1');
+  } catch (e) {
+    console.warn('[DB] Failed to rebuild notes search index:', e);
+  }
 }
 
 /**
