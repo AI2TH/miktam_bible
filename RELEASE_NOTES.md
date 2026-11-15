@@ -1,4 +1,4 @@
-# Miktam Bible — Complete Release Notes (v0.0.0 – v1.1.8)
+# Miktam Bible — Complete Release Notes (v0.0.0 – v1.2.1)
 
 ---
 
