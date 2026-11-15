@@ -56,13 +56,12 @@ export function useNotes() {
   }, [fetchNotes]);
 
   const getNote = useCallback(async (
-    versionId: string,
     bookNumber: number,
     chapter: number,
     verseNumber: number | null
   ) => {
     try {
-      return await noteService.getNoteForVerse(versionId, bookNumber, chapter, verseNumber);
+      return await noteService.getNoteForVerse(bookNumber, chapter, verseNumber);
     } catch (e) {
       console.error('[useNotes] Failed to load note:', e);
       return null;

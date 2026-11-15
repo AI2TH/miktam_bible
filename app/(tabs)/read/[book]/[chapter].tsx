@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, StyleSheet, TextInput, ScrollView, TouchableOpacity, Switch, Share } from 'react-native';
+import { View, StyleSheet, TextInput, ScrollView, TouchableOpacity, Switch, Share, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useTheme } from '../../../../src/theme';
@@ -81,6 +81,8 @@ export default function ChapterReaderScreen() {
   
   // Note state
   const [noteContent, setNoteContent] = useState('');
+  // Translation the existing note was written in (notes are shared across translations)
+  const [noteVersionId, setNoteVersionId] = useState<string | null>(null);
   
   // Detail sheet states
   const [strongsNumber, setStrongsNumber] = useState<string | null>(null);
@@ -131,8 +133,9 @@ export default function ChapterReaderScreen() {
     setStudySheetMode('actions');
 
     // Fetch existing note for this verse
-    const existingNote = await getNote(currentVersionId, currentBookNumber, currentChapter, verseNumber);
+    const existingNote = await getNote(currentBookNumber, currentChapter, verseNumber);
     setNoteContent(existingNote ? existingNote.content : '');
+    setNoteVersionId(existingNote ? existingNote.versionId : null);
   };
 
   const handleShareSelected = async () => {
@@ -207,8 +210,12 @@ export default function ChapterReaderScreen() {
 
   const handleSaveNote = async () => {
     if (selectedVerse === null) return;
-    await saveNote(currentVersionId, currentBookNumber, currentChapter, selectedVerse, noteContent);
-    setStudySheetMode('none');
+    try {
+      await saveNote(currentVersionId, currentBookNumber, currentChapter, selectedVerse, noteContent);
+      setStudySheetMode('none');
+    } catch (e) {
+      Alert.alert('Error', 'Failed to save the note.');
+    }
   };
 
   const handleOpenOriginalStudy = () => {
@@ -539,6 +546,11 @@ export default function ChapterReaderScreen() {
               <Text variant="h3" style={styles.sheetLabel}>
                 Study Reflection Note
               </Text>
+              {noteVersionId && noteVersionId.toLowerCase() !== (currentVersionId || '').toLowerCase() && (
+                <Text variant="caption" color="textSecondary" style={{ marginBottom: spacing.xs }}>
+                  Written while reading {noteVersionId.toUpperCase()}
+                </Text>
+              )}
               <TextInput
                 value={noteContent}
                 onChangeText={setNoteContent}

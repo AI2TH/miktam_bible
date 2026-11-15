@@ -3,7 +3,12 @@ import { BOOK_NAMES } from '../utils/constants';
 import type { Note } from '../types/user';
 import { generateUUID } from '../utils/uuid';
 
-/** Add a note on a verse or chapter */
+/**
+ * Add a note on a verse or chapter.
+ * Notes are keyed by the canonical location (book, chapter, verse), like highlights
+ * and bookmarks, so they follow the reader across translations. version_id records
+ * the translation the note was written in.
+ */
 export async function addNote(
   versionId: string,
   bookNumber: number,
@@ -15,7 +20,7 @@ export async function addNote(
   const db = getDatabase();
 
   // Check if a note already exists for this verse/chapter to prevent duplicate records
-  const existing = await getNoteForVerse(normVersion, bookNumber, chapter, verseNumber);
+  const existing = await getNoteForVerse(bookNumber, chapter, verseNumber);
   if (existing) {
     await updateNote(existing.id, content);
     return {
@@ -101,25 +106,29 @@ export async function deleteNote(id: string): Promise<void> {
   );
 }
 
-/** Get a single note for a verse/chapter */
+/**
+ * Get the note for a verse/chapter, in any translation.
+ * If older data has several notes for the same location (one per translation),
+ * the most recently updated one is returned.
+ */
 export async function getNoteForVerse(
-  versionId: string,
   bookNumber: number,
   chapter: number,
   verseNumber: number | null
 ): Promise<Note | null> {
-  const normVersion = (versionId || 'kjv').toLowerCase().trim();
   const db = getDatabase();
   let row;
   if (verseNumber === null) {
     row = await db.getFirstAsync<any>(
-      `SELECT * FROM notes WHERE LOWER(version_id) = ? AND book_number = ? AND chapter = ? AND verse_number IS NULL`,
-      [normVersion, bookNumber, chapter]
+      `SELECT * FROM notes WHERE book_number = ? AND chapter = ? AND verse_number IS NULL
+       ORDER BY updated_at DESC LIMIT 1`,
+      [bookNumber, chapter]
     );
   } else {
     row = await db.getFirstAsync<any>(
-      `SELECT * FROM notes WHERE LOWER(version_id) = ? AND book_number = ? AND chapter = ? AND verse_number = ?`,
-      [normVersion, bookNumber, chapter, verseNumber]
+      `SELECT * FROM notes WHERE book_number = ? AND chapter = ? AND verse_number = ?
+       ORDER BY updated_at DESC LIMIT 1`,
+      [bookNumber, chapter, verseNumber]
     );
   }
 
