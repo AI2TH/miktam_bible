@@ -63,8 +63,12 @@ export default function ChapterReaderScreen() {
     markChapterAsRead(currentVersionId, bookNumber, chapterNumber, 10).catch(() => {});
   }, [bookNumber, chapterNumber, navigateTo, currentVersionId]);
 
-  // Hook layers
-  const { verses, secondaryVerseMap, loading } = useBibleReader();
+  // Hook layers. Load the chapter from the route: the store only catches up in
+  // the effect above, after the first render.
+  const { verses, secondaryVerseMap, loading, error: chapterError, reload: reloadChapter } = useBibleReader({
+    bookNumber,
+    chapter: chapterNumber,
+  });
   const { add: addBookmark, remove: removeBookmark, removeByVerse: removeBookmarkByVerse, bookmarks, refetch: refetchBookmarks } = useBookmarks();
   const { getNote, save: saveNote, remove: removeNote } = useNotes();
   const { originalWords, loadOriginalWords } = useConcordance();
@@ -342,6 +346,9 @@ export default function ChapterReaderScreen() {
         secondaryVerseMap={secondaryVerseMap}
         secondaryVersionAbbr={secondaryVersionId ? getVersionAbbreviation(secondaryVersionId) : undefined}
         isDualMode={dualLanguageEnabled}
+        loading={loading}
+        error={chapterError}
+        onRetry={reloadChapter}
         onNextChapter={() => {
           const maxChapters = CHAPTERS_PER_BOOK[currentBookNumber] || 50;
           if (currentChapter < maxChapters) {
