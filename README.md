@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Your Offline Bible Study Companion</strong><br/>
-  <em>5,600+ translations · AI assistant · Strong's concordance · reading plans — 100% offline.</em>
+  <em>2,600+ translations · AI assistant · Strong's concordance · reading plans — offline after a one-time download.</em>
 </p>
 
 <p align="center">
@@ -38,7 +38,7 @@
 ## Features
 
 ### 📖 Scripture Reading
-Browse the complete Bible across **25 translations** in **15+ languages**. Navigate by book, chapter, and verse with a beautiful dark-mode interface. Long-press any verse to highlight, bookmark, copy, or share.
+Browse the Bible across **2,600+ translations** in about **1,200 languages** (KJV is built in; others download once). Navigate by book, chapter, and verse with a beautiful dark-mode interface. Long-press any verse to highlight, bookmark, copy, or share.
 
 ### 🤖 AI Study Assistant (100% Offline)
 Ask theological questions, explore historical context, and unpack biblical definitions using a local **GGUF LLM** (SmolLM2) that runs entirely on your device. No internet required — your conversations stay private.
@@ -47,19 +47,19 @@ Ask theological questions, explore historical context, and unpack biblical defin
 Look up any Greek or Hebrew word by Strong's number. See the original word, transliteration, definition, and every verse where it appears — across your selected translation.
 
 ### 🔎 Full-Text Search
-Instantly search the entire Bible for any word or phrase. Results are grouped by book with highlighted matches and one-tap navigation to the full chapter.
+Instantly search the entire Bible for any word or phrase. Results are ranked by relevance with highlighted matches and one-tap navigation to the full chapter.
 
 ### 🎙️ Voice Memos
 Record voice study notes while reading. Recordings are auto-tagged with the current book, chapter, and verse for easy retrieval later.
 
 ### 📅 Reading Calendar
-Track your daily reading habit with a visual calendar heatmap. Maintain your reading streak and monitor weekly/monthly progress.
+Track your daily reading habit with a visual reading calendar. Maintain your reading streak and monitor weekly/monthly progress.
 
 ### 🌓 Light & Dark Mode
 Seamless support for both light and dark themes, with an elegant dark background (`#0F0F14`) and gold accent (`#C9A55C`) palette designed for comfortable extended reading.
 
 ### 🌍 Multilingual Book Names
-Book names are displayed in the native language of the selected translation. Reading Genesis in Arabic? The book grid shows الأسماء العربية.
+Book names are shown in 19 major languages, including Arabic, Hindi, Korean and Tamil. Other translations use English book names for now.
 
 ---
 
@@ -126,33 +126,11 @@ Book names are displayed in the native language of the selected translation. Rea
 
 ## Supported Translations
 
-| Code | Translation | Language |
-|------|------------|----------|
-| `kjv` | King James Version | English |
-| `asv` | American Standard Version | English |
-| `bbe` | Bible in Basic English | English |
-| `web` | World English Bible | English |
-| `ara` | Arabic Bible | Arabic |
-| `ncv` | New Chinese Version | Chinese |
-| `cuv` | Chinese Union Version | Chinese |
-| `epo` | Esperanto Bible | Esperanto |
-| `fin` | Finnish Bible | Finnish |
-| `lsg` | Louis Segond | French |
-| `lut` | Luther Bible | German |
-| `grc` | Greek New Testament | Greek |
-| `hin` | Hindi Bible | Hindi |
-| `kan` | Kannada Bible | Kannada |
-| `kor` | Korean Bible | Korean |
-| `mal` | Malayalam Bible | Malayalam |
-| `por` | Portuguese Bible | Portuguese |
-| `por_acf` | Portuguese ACF | Portuguese |
-| `por_aa` | Portuguese Almeida Antiga | Portuguese |
-| `ron` | Romanian Bible | Romanian |
-| `rus` | Russian Bible | Russian |
-| `rvr` | Reina Valera | Spanish |
-| `tam` | Tamil Bible | Tamil |
-| `tel` | Telugu Bible | Telugu |
-| `vie` | Vietnamese Bible | Vietnamese |
+The in-app catalog lists **2,633 translations** (KJV built in, 2,632 downloadable) in about **1,200 languages**. Translations download once from the open Bible data repos:
+
+- [bible_db](https://github.com/AI2TH/bible_db): one SQLite database per translation, with FTS5
+- [bible_db_languages_a_f](https://github.com/AI2TH/bible_db_languages_a_f), [g_m](https://github.com/AI2TH/bible_db_languages_g_m), [n_s](https://github.com/AI2TH/bible_db_languages_n_s), [t_z](https://github.com/AI2TH/bible_db_languages_t_z): translations grouped by file name
+- [concordance_db](https://github.com/AI2TH/concordance_db): Strong's Greek and Hebrew, lexicons and cross-references
 
 ---
 
@@ -163,13 +141,13 @@ Book names are displayed in the native language of the selected translation. Rea
 | **Framework** | [Expo](https://expo.dev) SDK 56 + [React Native](https://reactnative.dev) 0.85 |
 | **Router** | [Expo Router](https://docs.expo.dev/router/introduction/) (file-based routing) |
 | **Database** | [expo-sqlite](https://docs.expo.dev/versions/v56.0.0/sdk/sqlite/) — preseeded 648 MB offline database |
-| **AI Engine** | [llama.rn](https://github.com/nickhobbs/llama.rn) — on-device GGUF inference (SmolLM2 Q4) |
+| **AI Engine** | [llama.rn](https://github.com/mybigday/llama.rn) — on-device GGUF inference (SmolLM2-135M, Q4_K_M, ~105 MB download) |
 | **Audio** | [expo-audio](https://docs.expo.dev/versions/v56.0.0/sdk/audio/) — voice memo recording |
 | **State** | [Zustand](https://zustand-demo.pmnd.rs/) — lightweight global state |
 | **Storage** | [react-native-mmkv](https://github.com/mrousavy/react-native-mmkv) — high-performance key-value storage |
 | **Animations** | [react-native-reanimated](https://docs.swmansion.com/react-native-reanimated/) |
 | **Typography** | [Google Fonts](https://fonts.google.com) — Outfit & Source Serif 4 |
-| **Language** | TypeScript 6.0 |
+| **Language** | TypeScript 5.6 |
 
 ---
 
@@ -185,8 +163,8 @@ Book names are displayed in the native language of the selected translation. Rea
 
 ```bash
 # Clone the repository
-git clone https://github.com/skalvinnathan/bible.git
-cd bible
+git clone https://github.com/AI2TH/miktam_bible.git
+cd miktam_bible
 
 # Install dependencies
 npm install --legacy-peer-deps
@@ -228,7 +206,7 @@ bible/
 │   │   ├── read/               #   Read tab (book grid → chapters → verses)
 │   │   ├── search.tsx          #   Full-text search
 │   │   ├── calendar.tsx        #   Reading streak calendar
-│   │   └── profile.tsx         #   Settings & profile
+│   │   └── plans.tsx           #   Reading plans
 │   ├── chat.tsx                # AI study assistant chat
 │   ├── bookmarks.tsx           # Highlights & bookmarks
 │   ├── recordings.tsx          # Voice memos
@@ -257,7 +235,7 @@ bible/
 │   └── app/
 │       └── src/main/assets/    # Preseeded binary assets
 │           ├── bible.db        #   SQLite database (~648 MB)
-│           └── bible-q4km.gguf #   LLM model (~105 MB)
+│                               #   (the ~105 MB AI model downloads on demand)
 │
 ├── assets/                     # App icons, splash screen, fonts
 ├── app.json                    # Expo configuration
@@ -294,7 +272,7 @@ $env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
 
 ## Offline Architecture
 
-Miktam Bible is designed to work **entirely offline** after initial installation:
+Miktam Bible is designed to work **entirely offline** once translations and the AI model are downloaded:
 
 ```
 ┌─────────────────────────────────────────┐
@@ -311,11 +289,11 @@ Miktam Bible is designed to work **entirely offline** after initial installation
 │  │    (Hermes JS Engine + JSI)        │ │
 │  └────────────────────────────────────┘ │
 │                                         │
-│  📖 25 Translations  🔍 Concordance     │
+│  📖 2,600+ Versions  🔍 Concordance     │
 │  🤖 AI Chat          🎙️ Voice Memos    │
 │  📅 Reading Tracker  ⭐ Bookmarks       │
 │                                         │
-│         No Internet Required            │
+│   No Internet After First Downloads     │
 └─────────────────────────────────────────┘
 ```
 
