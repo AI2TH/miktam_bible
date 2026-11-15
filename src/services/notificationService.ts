@@ -1,8 +1,8 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import { format, addDays } from 'date-fns';
 import { getDatabase } from './database';
 import { loadVerseOfTheDay } from './verseOfTheDayService';
+import { DAILY_VERSE_PREFIX, planDailyVerseNotifications } from './dailyVerse';
 import { PLAN_DAYS_WITH_PROGRESS_SQL } from '../database/schema';
 import {
   PLAN_REMINDER_PREFIX,
@@ -38,7 +38,7 @@ export async function initNotificationChannels(): Promise<void> {
 
     await Notifications.setNotificationChannelAsync('daily_votd', {
       name: 'Verse of the Day',
-      description: 'Morning Scripture reflection delivered at 12:00 AM',
+      description: 'One verse a day, at the time you choose',
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#C9A55C',
@@ -82,72 +82,80 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 }
 
 /**
- * Schedule daily morning Verse of the Day notifications at 12:00 AM (midnight)
- * Schedules a rolling window of 14 days with the exact daily verse for each morning,
- * matching the Home screen's Verse of the Day, plus a repeating daily safety net.
+ * Schedule the daily verse notification: exactly one per day, at the time the
+ * user picked, for the next DAILY_VERSE_WINDOW_DAYS days. Each carries that
+ * date's verse and reference, the same date-seeded pick the Home screen shows,
+ * in the given translation (falling back to KJV). With no time set, every
+ * daily verse notification is cancelled; there is no default time.
+ *
+ * Re-run whenever Home opens or the translation or time changes; it keeps
+ * notifications whose text is unchanged and replaces the rest. The old
+ * repeating midnight "fallback" notification is cancelled.
  */
-export async function scheduleDailyVotdNotification(versionId?: string): Promise<void> {
+export function scheduleDailyVotdNotification(versionId: string | undefined, time: string | null): Promise<void> {
+  const run = votdQueue.then(() => scheduleDailyVotdNow(versionId, time));
+  votdQueue = run.catch(() => {});
+  return run;
+}
+
+let votdQueue: Promise<void> = Promise.resolve();
+
+async function scheduleDailyVotdNow(versionId: string | undefined, time: string | null): Promise<void> {
   if (Platform.OS === 'web') return;
 
   try {
+    const planned = planDailyVerseNotifications(new Date(), time);
+    if (planned.length === 0) {
+      await cancelVotdNotifications();
+      return;
+    }
+
     const hasPermission = await requestNotificationPermissions();
     if (!hasPermission) return;
 
     const normVer = (versionId || 'kjv').toLowerCase().trim();
+    const plannedIds = new Set(planned.map((p) => p.id));
+    const scheduled = (await Notifications.getAllScheduledNotificationsAsync()).filter((n) =>
+      n.identifier?.startsWith(DAILY_VERSE_PREFIX)
+    );
 
-    // Cancel existing VOTD notifications to prevent duplication
-    await cancelVotdNotifications();
+    // Anything not in the plan goes, including the old midnight fallback
+    for (const n of scheduled) {
+      if (!plannedIds.has(n.identifier)) {
+        await Notifications.cancelScheduledNotificationAsync(n.identifier);
+      }
+    }
+    const existing = new Map(scheduled.map((n) => [n.identifier, n]));
 
-    const now = new Date();
+    for (const p of planned) {
+      const votd = await loadVerseOfTheDay(normVer, p.dateKey);
+      const title = `🕊️ Verse of the Day • ${votd.ref}`;
+      const body = votd.text;
 
-    // Schedule for upcoming 14 mornings at 12:00 AM (00:00:00)
-    for (let i = 0; i < 14; i++) {
-      const scheduledDate = addDays(now, i);
-      scheduledDate.setHours(0, 0, 0, 0);
-
-      // If 12:00 AM for today has already passed, skip today and schedule for tomorrow onwards
-      if (scheduledDate.getTime() <= now.getTime()) {
+      // The id holds the date and time, so only the text can differ
+      const current = existing.get(p.id);
+      if (current && current.content?.title === title && current.content?.body === body) {
         continue;
       }
 
-      const dateStr = format(scheduledDate, 'yyyy-MM-dd');
-      const votd = await loadVerseOfTheDay(normVer, dateStr);
-
+      // Same identifier replaces the earlier notification for that date
       await Notifications.scheduleNotificationAsync({
-        identifier: `miktam_votd_${dateStr}`,
+        identifier: p.id,
         content: {
-          title: `🕊️ Verse of the Day • ${votd.ref}`,
-          body: votd.text,
+          title,
+          body,
           sound: true,
           color: '#C9A55C',
           data: { type: 'votd', book: votd.book, chapter: votd.chapter, verse: votd.verse },
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DATE,
-          date: scheduledDate,
+          date: p.fireAt,
           channelId: 'daily_votd',
         },
       });
-      console.log(`[Notifications] Scheduled 12:00 AM VOTD for ${dateStr}: ${votd.ref}`);
     }
-
-    // Safety net: repeating daily notification at 00:00 (12:00 AM)
-    await Notifications.scheduleNotificationAsync({
-      identifier: 'miktam_votd_daily_fallback',
-      content: {
-        title: '🕊️ Daily Verse of the Day',
-        body: 'Start your morning in God’s Word. Tap to read today’s verse!',
-        sound: true,
-        color: '#C9A55C',
-        data: { type: 'votd_home' },
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DAILY,
-        hour: 0,
-        minute: 0,
-        channelId: 'daily_votd',
-      },
-    });
+    console.log(`[Notifications] Daily verse scheduled for ${planned.length} days at ${time}`);
   } catch (e) {
     console.warn('[Notifications] Failed to schedule daily VOTD notifications:', e);
   }
@@ -159,7 +167,7 @@ export async function cancelVotdNotifications(): Promise<void> {
   try {
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
     for (const notif of scheduled) {
-      if (notif.identifier && notif.identifier.startsWith('miktam_votd_')) {
+      if (notif.identifier && notif.identifier.startsWith(DAILY_VERSE_PREFIX)) {
         await Notifications.cancelScheduledNotificationAsync(notif.identifier);
       }
     }

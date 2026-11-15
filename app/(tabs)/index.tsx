@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Image, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useNavigation } from 'expo-router';
 import { useTheme } from '../../src/theme';
@@ -18,12 +18,16 @@ import { isDatabaseInitialized } from '../../src/services/database';
 import { loadVerseOfTheDay } from '../../src/services/verseOfTheDayService';
 import { scheduleDailyVotdNotification } from '../../src/services/notificationService';
 import { useSettingsStore } from '../../src/stores/settingsStore';
+import { CustomTimeSelector, formatTo12Hour } from '../../src/components/calendar/ReadingPlanSection';
 
 export default function HomeScreen() {
   const { colors, spacing, borderRadius, isDark } = useTheme();
   const navigation = useNavigation();
   const { currentBookNumber, currentChapter, currentVersionId, navigateTo } = useReaderStore();
-  const { setThemeMode } = useSettingsStore();
+  const { setThemeMode, dailyVerseTime, setDailyVerseTime } = useSettingsStore();
+  const [verseTimeModalVisible, setVerseTimeModalVisible] = useState(false);
+  const [verseTimeDraft, setVerseTimeDraft] = useState<string | null>(null);
+  const dailyVerseLabel = formatTo12Hour(dailyVerseTime);
 
   const [streak, setStreak] = useState(0);
   const [stats, setStats] = useState({ totalChaptersRead: 0, totalReadingTimeSecs: 0, chaptersReadThisWeek: 0 });
@@ -57,8 +61,9 @@ export default function HomeScreen() {
           setVotd(dailyVotd);
         }
 
-        // Schedule / ensure daily 12:00 AM morning notification for Verse of the Day
-        scheduleDailyVotdNotification(currentVersionId).catch((err) =>
+        // One daily verse notification a day at the user's time (none until a time is set),
+        // carrying the same verse as the card above
+        scheduleDailyVotdNotification(currentVersionId, useSettingsStore.getState().dailyVerseTime).catch((err) =>
           console.warn('[Home] Failed to schedule daily VOTD notification:', err)
         );
       } catch (e) {
@@ -80,6 +85,19 @@ export default function HomeScreen() {
       pathname: '/(tabs)/read/[book]/[chapter]',
       params: { book: currentBookNumber.toString(), chapter: currentChapter.toString() }
     });
+  };
+
+  const openVerseTimeModal = () => {
+    setVerseTimeDraft(dailyVerseTime);
+    setVerseTimeModalVisible(true);
+  };
+
+  const saveDailyVerseTime = (time: string | null) => {
+    setDailyVerseTime(time);
+    setVerseTimeModalVisible(false);
+    scheduleDailyVotdNotification(currentVersionId, time).catch((err) =>
+      console.warn('[Home] Failed to update daily verse notification:', err)
+    );
   };
 
   const handleReadVotd = () => {
@@ -130,7 +148,72 @@ export default function HomeScreen() {
               </Text>
             </TouchableOpacity>
           </View>
+
+          {/* Daily verse notification: off until the user picks a time */}
+          <TouchableOpacity
+            onPress={openVerseTimeModal}
+            style={[styles.verseNotifyRow, { borderTopColor: colors.border }]}
+            accessibilityRole="button"
+            accessibilityLabel={
+              dailyVerseLabel
+                ? `Daily verse notification at ${dailyVerseLabel}. Change time`
+                : 'Daily verse notification off. Set a time'
+            }
+          >
+            <Ionicons
+              name={dailyVerseLabel ? 'notifications' : 'notifications-off-outline'}
+              size={16}
+              color={dailyVerseLabel ? colors.primary : colors.textTertiary}
+            />
+            <Text variant="caption" color="textSecondary" style={{ flex: 1, fontWeight: '600' }}>
+              {dailyVerseLabel
+                ? `Daily verse notification: ${dailyVerseLabel}`
+                : 'Daily verse notification: off. Set a time'}
+            </Text>
+            <Ionicons name="pencil" size={12} color={colors.primary} />
+          </TouchableOpacity>
         </Card>
+
+        <Modal
+          visible={verseTimeModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setVerseTimeModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View
+              style={[
+                styles.modalCard,
+                { backgroundColor: colors.background, borderColor: colors.border, borderRadius: borderRadius.lg },
+              ]}
+            >
+              <Text variant="h3" style={{ fontWeight: '700' }}>
+                Daily verse notification
+              </Text>
+              <Text variant="caption" color="textSecondary" style={{ marginVertical: 6 }}>
+                Once a day, the verse shown on Home that day, with its reference.
+              </Text>
+              <CustomTimeSelector value={verseTimeDraft} onChange={setVerseTimeDraft} />
+              <View style={styles.modalActions}>
+                <Button
+                  label={dailyVerseTime ? 'Turn Off' : 'Cancel'}
+                  onPress={() =>
+                    dailyVerseTime ? saveDailyVerseTime(null) : setVerseTimeModalVisible(false)
+                  }
+                  variant="outline"
+                  style={{ flex: 1 }}
+                />
+                <Button
+                  label="Save Time"
+                  onPress={() => saveDailyVerseTime(verseTimeDraft)}
+                  variant="primary"
+                  disabled={!verseTimeDraft}
+                  style={{ flex: 1 }}
+                />
+              </View>
+            </View>
+          </View>
+        </Modal>
 
         {/* AI Study Assistant Card */}
         <Card style={[styles.aiCard, { marginBottom: spacing.lg }]} bordered>
@@ -296,6 +379,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  verseNotifyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    borderWidth: 1,
+    padding: 20,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
   },
   readContextText: {
     fontWeight: 'bold',

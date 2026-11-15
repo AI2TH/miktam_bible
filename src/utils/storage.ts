@@ -8,6 +8,7 @@ const SETTINGS_KEYS = [
   'themeMode',
   'preferredVersion',
   'preferredLanguage',
+  'dailyVerseTime',
 ];
 
 // Attempt to initialize MMKV
