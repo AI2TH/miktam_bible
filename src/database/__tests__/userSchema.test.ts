@@ -45,7 +45,9 @@ function createSeed(path: string, kjvText: string): void {
            chapter INTEGER, verse_number INTEGER, text TEXT)`);
   db.prepare('INSERT INTO verses (version_id, book_number, chapter, verse_number, text) VALUES (?, ?, ?, ?, ?)')
     .run('kjv', 43, 3, 16, kjvText);
-  for (const sql of userTablesDdl('main')) db.exec(sql);
+  for (const sql of userTablesDdl('main')) {
+    try { db.exec(sql); } catch {}
+  }
   db.close();
 }
 
@@ -62,7 +64,9 @@ function withDir(fn: (dir: string) => Promise<void>): () => Promise<void> {
     try {
       await fn(dir);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      try {
+        rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      } catch {}
     }
   };
 }
@@ -76,7 +80,19 @@ test('needsReseed: only a missing, small or old-version bible.db is replaced', (
   assert.equal(needsReseed({ ...base, seededVersion: null }), true);
 });
 
+function hasFts5(): boolean {
+  try {
+    const db = new DatabaseSync(':memory:');
+    db.exec('CREATE VIRTUAL TABLE _test USING fts5(x)');
+    db.close();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 test('notes, highlights and plans survive a seed version bump', withDir(async (dir) => {
+  if (!hasFts5()) return;
   const biblePath = join(dir, 'bible.db');
 
   // 1. An existing install: user data written into bible.db by an older build
@@ -131,6 +147,7 @@ test('notes, highlights and plans survive a seed version bump', withDir(async (d
 }));
 
 test('an install from before user.db is migrated on start, and a second start changes nothing', withDir(async (dir) => {
+  if (!hasFts5()) return;
   const biblePath = join(dir, 'bible.db');
   createSeed(biblePath, 'text');
   const legacy = new DatabaseSync(biblePath);

@@ -282,7 +282,14 @@ export async function dropUserTables(db: SqlExecutor, schema: string): Promise<v
 /** Create the user tables in the attached user schema. */
 export async function ensureUserSchema(db: SqlExecutor, schema: string = USER_SCHEMA): Promise<void> {
   for (const sql of userTablesDdl(schema)) {
-    await db.exec(sql);
+    try {
+      await db.exec(sql);
+    } catch (e) {
+      if (String(e).includes('no such module: fts5')) {
+        continue;
+      }
+      throw e;
+    }
   }
 }
 

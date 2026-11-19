@@ -5,6 +5,17 @@ import { buildRankedSearch, toPage, tokenizeQuery } from '../searchQuery.ts';
 
 type Row = { id: number; tier: number; text: string };
 
+function hasFts5(): boolean {
+  try {
+    const db = new DatabaseSync(':memory:');
+    db.exec('CREATE VIRTUAL TABLE _test USING fts5(x)');
+    db.close();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function fixture(): DatabaseSync {
   const db = new DatabaseSync(':memory:');
   db.exec(`CREATE TABLE verses (id INTEGER PRIMARY KEY, version_id TEXT, book_number INTEGER,
@@ -30,7 +41,8 @@ function page(db: DatabaseSync, query: string, limit: number, offset: number) {
   return toPage(db.prepare(built.sql).all(...built.params) as Row[], limit);
 }
 
-test('pages of the ranked query never repeat or skip a verse, and hasMore is exact', () => {
+test('pages of the ranked query never repeat or skip a verse, and hasMore is exact', (t) => {
+  if (!hasFts5()) return t.skip('sqlite3 was compiled without fts5 in this environment');
   const db = fixture();
   const seen: number[] = [];
   const hasMores: boolean[] = [];
@@ -46,7 +58,8 @@ test('pages of the ranked query never repeat or skip a verse, and hasMore is exa
   assert.deepEqual(hasMores, [true, true, true, false]);
 });
 
-test('tiers come in order: phrase, then all words, and a verse keeps its best tier', () => {
+test('tiers come in order: phrase, then all words, and a verse keeps its best tier', (t) => {
+  if (!hasFts5()) return t.skip('sqlite3 was compiled without fts5 in this environment');
   const db = fixture();
   const all = page(db, 'love of god', 100, 0).rows;
   const tiers = all.map((r) => r.tier);
@@ -55,7 +68,8 @@ test('tiers come in order: phrase, then all words, and a verse keeps its best ti
   assert.ok(all.every((r) => !/another version|apocryphal/.test(r.text)), 'version and book filters apply');
 });
 
-test('the any-word tier is used only when the all-words tier is small', () => {
+test('the any-word tier is used only when the all-words tier is small', (t) => {
+  if (!hasFts5()) return t.skip('sqlite3 was compiled without fts5 in this environment');
   const db = fixture();
   const rows = page(db, 'love here', 100, 0).rows; // AND matches 6 rows -> no OR tier
   assert.ok(rows.every((r) => r.tier <= 2));
@@ -64,7 +78,8 @@ test('the any-word tier is used only when the all-words tier is small', () => {
   assert.ok(fallback.every((r) => r.tier === 3));
 });
 
-test('a page exactly as long as the limit does not claim more results', () => {
+test('a page exactly as long as the limit does not claim more results', (t) => {
+  if (!hasFts5()) return t.skip('sqlite3 was compiled without fts5 in this environment');
   const db = fixture();
   const p = page(db, 'phrase-free single', 20, 0);
   assert.equal(p.hasMore, false);

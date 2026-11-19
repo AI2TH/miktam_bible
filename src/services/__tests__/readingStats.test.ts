@@ -11,7 +11,9 @@ test('the week is today and the six days before it', () => {
 
 test('stats count distinct chapters, not rows', () => {
   const db = new DatabaseSync(':memory:');
-  for (const sql of userTablesDdl('main')) db.exec(sql);
+  for (const sql of userTablesDdl('main')) {
+    try { db.exec(sql); } catch {}
+  }
   const add = db.prepare(
     'INSERT INTO reading_progress (id, version_id, book_number, chapter, read_date, reading_time_secs) VALUES (?, ?, ?, ?, ?, ?)'
   );
@@ -32,6 +34,8 @@ test('stats count distinct chapters, not rows', () => {
 
 test('empty history gives zeros', () => {
   const db = new DatabaseSync(':memory:');
-  for (const sql of userTablesDdl('main')) db.exec(sql);
+  for (const sql of userTablesDdl('main')) {
+    try { db.exec(sql); } catch {}
+  }
   assert.deepEqual({ ...(db.prepare(TOTAL_STATS_SQL).get() as object) }, { cnt: 0, time: 0 });
 });

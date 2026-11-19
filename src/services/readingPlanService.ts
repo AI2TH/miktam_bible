@@ -670,7 +670,6 @@ export async function completeDayReading(planId: string, dayNumber: number): Pro
      WHERE id = ?`,
     [planId, format(new Date(), 'yyyy-MM-dd'), planId]
   );
-  );
 
   // Synchronize dynamic notifications (cancels pending for today, schedules tomorrow with Day X+1)
   await syncReadingPlanNotification(planId);
