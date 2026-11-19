@@ -24,6 +24,31 @@ To get Early Access to Miktam Bible on Google Play, testers only need to do **ON
 
 ---
 
+## [v1.2.2] — 2026-11-19
+### Instant Chapter Loading, Reader Header Fix, User Data Isolation & Code Review Fixes
+- **⚡ Instant Chapter Loading (0.02ms)**:
+  - Added SQLite expression indexes on `LOWER(version_id)` across `verses` and `books`.
+  - Replaced 1.2M-row full-table scans with index lookups, completely eliminating the "Content Not Available" loading flash on chapter open.
+- **📱 Reader Top Header Ergonomics**:
+  - Split title and controls (`[KJV] [🌐 + Dual] [– A +]`) into two clean rows.
+  - Prevents button overflow and title truncation on phones with 360dp or large accessibility font scales.
+- **🔒 User Data Isolation (`user.db`)**:
+  - Migrated user notes, highlights, bookmarks, audio memos, calendar events, and reading plans into a dedicated `user.db`.
+  - Upgrades and re-seeding of `bible.db` will **never wipe personal user data**.
+- **📋 Planner Per-Chapter Progress Checkboxes**:
+  - Track individual chapter reading within daily plan assignments.
+  - Days turn completed only when all chapters are checked off.
+- **🤖 Honest Offline AI & Voice Memos**:
+  - Removed mock responses: AI assistant honestly delivers retrieved verses when no SLM model is downloaded.
+  - Voice memos cleanly indicate when Whisper speech model is required.
+- **🔍 Ranked Search Pagination**:
+  - Combined phrase, all-word, and any-word tiers into a single ranked query, eliminating duplicates and missed results during scrolling.
+- **🛡️ Production Privacy**:
+  - Automatically strips all `console.log` calls from production release bundles.
+  - Binds SQL parameters on `ATTACH DATABASE` and ensures atomic writes for downloads and plans.
+
+---
+
 ## [v1.2.1] — 2026-11-05
 ### Dynamic Planner Notifications, 12 AM Daily VOTD, Custom Timers & Authentic Curriculums
 - **Dynamic Planner Notifications & Completion Tracking**:

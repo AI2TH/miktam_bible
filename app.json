@@ -2,7 +2,7 @@
   "expo": {
     "name": "Miktam Bible",
     "slug": "bible-app",
-    "version": "1.2.1",
+    "version": "1.2.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "bible-app",
@@ -29,7 +29,7 @@
         "backgroundColor": "#0F0F14"
       },
       "package": "miktam.bible",
-      "versionCode": 22,
+      "versionCode": 23,
       "permissions": [
         "RECORD_AUDIO",
         "VIBRATE",
