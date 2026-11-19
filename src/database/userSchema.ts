@@ -24,6 +24,7 @@ export const USER_TABLES = [
   'calendar_events',
   'reading_plans',
   'reading_plan_days',
+  'reading_plan_day_chapters',
   'reading_progress',
   'chat_history',
 ] as const;
@@ -157,8 +158,9 @@ export function userTablesDdl(schema: string = USER_SCHEMA): string[] {
       duration_days   INTEGER NOT NULL,
       start_date      TEXT NOT NULL,
       is_active       INTEGER DEFAULT 1,
-      reminder_time   TEXT DEFAULT '08:00',
-      reminder_enabled INTEGER DEFAULT 1,
+      reminder_time   TEXT,
+      reminder_enabled INTEGER DEFAULT 0,
+      reminder_repeat_hours INTEGER,
       current_day     INTEGER DEFAULT 1,
       created_at      TEXT DEFAULT (datetime('now'))
     )`,
@@ -180,6 +182,17 @@ export function userTablesDdl(schema: string = USER_SCHEMA): string[] {
     `CREATE INDEX IF NOT EXISTS ${s}idx_reading_plan_days ON reading_plan_days(plan_id, day_number)`,
 
     `CREATE INDEX IF NOT EXISTS ${s}idx_reading_plan_days_date ON reading_plan_days(scheduled_date)`,
+
+    `CREATE TABLE IF NOT EXISTS ${s}reading_plan_day_chapters (
+      plan_id         TEXT NOT NULL,
+      day_number      INTEGER NOT NULL,
+      seq             INTEGER NOT NULL,
+      book_number     INTEGER NOT NULL,
+      chapter         INTEGER NOT NULL,
+      is_read         INTEGER NOT NULL DEFAULT 0,
+      read_at         TEXT,
+      PRIMARY KEY (plan_id, day_number, seq)
+    )`,
 
     `CREATE TABLE IF NOT EXISTS ${s}reading_progress (
       id              TEXT PRIMARY KEY,

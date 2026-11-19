@@ -14,6 +14,7 @@ import { Text } from '../ui/Text';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Ionicons } from '@expo/vector-icons';
+import { format, parseISO } from 'date-fns';
 import {
   READING_PLAN_DEFINITIONS,
   PlanType,
@@ -22,25 +23,34 @@ import {
   getSchedulePreview,
   getAllPlanDays,
 } from '../../services/readingPlanService';
+import { firstUnreadChapter, formatDayProgress } from '../../services/readingPlanProgress';
+import { getBookAbbreviation } from '../../utils/bookTranslations';
+import { REPEAT_INTERVAL_OPTIONS } from '../../services/reminderSchedule';
 
 interface ReadingPlanSectionProps {
   plan: ReadingPlan | null;
   todayReading: ReadingPlanDay | null;
-  nextReading?: ReadingPlanDay | null;
+  /** Earlier days of the plan that are not done yet, oldest first */
+  pendingDays?: ReadingPlanDay[];
+  /** The next days after today, so they can be read early */
+  upcomingDays?: ReadingPlanDay[];
   onStartPlan: (
     type: PlanType,
-    reminderTime: string,
+    reminderTime: string | null,
     reminderEnabled: boolean,
     customConfig?: {
       title?: string;
       durationDays?: number;
       scope?: 'whole' | 'nt' | 'ot' | 'gospels' | 'wisdom';
       startDate?: string;
-    }
+    },
+    reminderRepeatHours?: number | null
   ) => Promise<void>;
   onCompleteDay: (dayNumber: number) => Promise<void>;
+  /** Mark one chapter of a day read or unread (seq = position within the day) */
+  onToggleChapter: (dayNumber: number, seq: number, isRead: boolean) => Promise<void>;
   onCancelPlan: () => void | Promise<void>;
-  onUpdateReminder: (enabled: boolean, time: string) => Promise<void>;
+  onUpdateReminder: (enabled: boolean, time: string | null, repeatHours?: number | null) => Promise<void>;
   onNavigateToReading: (bookNumber: number, chapter: number) => void;
 }
 
@@ -52,38 +62,51 @@ const SCOPE_OPTIONS: { id: 'whole' | 'nt' | 'ot' | 'gospels' | 'wisdom'; label: 
   { id: 'wisdom', label: '💎 Psalms & Wisdom' },
 ];
 
-/** Convert 24-hour "HH:mm" string to formatted 12-hour AM/PM string */
-function formatTo12Hour(time24: string): string {
-  if (!time24) return '08:00 AM';
+/** Parse 'HH:mm'; null when missing or invalid */
+function parseTime24(time24: string | null | undefined): { h: number; m: number } | null {
+  if (!time24) return null;
   const [hStr, mStr] = time24.split(':');
-  let h = parseInt(hStr || '8', 10);
-  let m = parseInt(mStr || '0', 10);
-  if (isNaN(h)) h = 8;
-  if (isNaN(m)) m = 0;
-  const period = h >= 12 ? 'PM' : 'AM';
-  const displayH = h % 12 || 12;
-  const displayM = m.toString().padStart(2, '0');
-  return `${displayH}:${displayM} ${period}`;
+  const h = parseInt(hStr, 10);
+  const m = parseInt(mStr, 10);
+  if (!Number.isInteger(h) || !Number.isInteger(m) || h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return { h, m };
+}
+
+/** "7:30 AM" for '07:30'; null when no time is set */
+export function formatTo12Hour(time24: string | null | undefined): string | null {
+  const t = parseTime24(time24);
+  if (!t) return null;
+  const period = t.h >= 12 ? 'PM' : 'AM';
+  const displayH = t.h % 12 || 12;
+  return `${displayH}:${t.m.toString().padStart(2, '0')} ${period}`;
+}
+
+/** The current time rounded up to the next 5 minutes: where the steppers start when no time is set */
+function nextFiveMinuteSlot(): { h: number; m: number } {
+  const d = new Date();
+  const total = Math.ceil((d.getHours() * 60 + d.getMinutes() + 1) / 5) * 5;
+  return { h: Math.floor(total / 60) % 24, m: total % 60 };
 }
 
 /**
  * Custom Time Selector Component
- * Allows user to set ANY hour and minute (with steppers, AM/PM, and quick presets)
+ * Allows user to set ANY hour and minute (with steppers, AM/PM, and quick presets).
+ * `value` null means no time picked yet: it shows "--:--" and nothing is saved
+ * until the user changes it.
  */
-function CustomTimeSelector({
+export function CustomTimeSelector({
   value,
   onChange,
 }: {
-  value: string;
+  value: string | null;
   onChange: (time24: string) => void;
 }) {
   const { colors, spacing, borderRadius } = useTheme();
 
-  const [hStr, mStr] = (value || '08:00').split(':');
-  let rawH = parseInt(hStr || '8', 10);
-  let rawM = parseInt(mStr || '0', 10);
-  if (isNaN(rawH)) rawH = 8;
-  if (isNaN(rawM)) rawM = 0;
+  const picked = parseTime24(value);
+  const base = picked ?? nextFiveMinuteSlot();
+  const rawH = base.h;
+  const rawM = base.m;
 
   const isPM = rawH >= 12;
   const hour12 = rawH % 12 || 12;
@@ -112,7 +135,7 @@ function CustomTimeSelector({
   };
 
   const togglePeriod = (targetPM: boolean) => {
-    if (targetPM !== isPM) {
+    if (!picked || targetPM !== isPM) {
       updateTime(hour12, minute, targetPM);
     }
   };
@@ -144,7 +167,7 @@ function CustomTimeSelector({
             <Ionicons name="chevron-up" size={18} color={colors.primary} />
           </TouchableOpacity>
           <Text variant="h1" style={{ fontWeight: '700', minWidth: 44, textAlign: 'center' }}>
-            {hour12.toString().padStart(2, '0')}
+            {picked ? hour12.toString().padStart(2, '0') : '--'}
           </Text>
           <TouchableOpacity
             style={[styles.stepperBtn, { backgroundColor: colors.surfaceElevated }]}
@@ -170,7 +193,7 @@ function CustomTimeSelector({
             <Ionicons name="chevron-up" size={18} color={colors.primary} />
           </TouchableOpacity>
           <Text variant="h1" style={{ fontWeight: '700', minWidth: 44, textAlign: 'center' }}>
-            {minute.toString().padStart(2, '0')}
+            {picked ? minute.toString().padStart(2, '0') : '--'}
           </Text>
           <TouchableOpacity
             style={[styles.stepperBtn, { backgroundColor: colors.surfaceElevated }]}
@@ -188,14 +211,14 @@ function CustomTimeSelector({
           <TouchableOpacity
             style={[
               styles.ampmBtn,
-              !isPM ? { backgroundColor: colors.primary } : { backgroundColor: colors.surfaceElevated },
+              picked && !isPM ? { backgroundColor: colors.primary } : { backgroundColor: colors.surfaceElevated },
             ]}
             onPress={() => togglePeriod(false)}
           >
             <Text
               variant="caption"
               style={{ fontWeight: 'bold' }}
-              color={!isPM ? 'inverse' : 'textPrimary'}
+              color={picked && !isPM ? 'inverse' : 'textPrimary'}
             >
               AM
             </Text>
@@ -203,14 +226,14 @@ function CustomTimeSelector({
           <TouchableOpacity
             style={[
               styles.ampmBtn,
-              isPM ? { backgroundColor: colors.primary } : { backgroundColor: colors.surfaceElevated },
+              picked && isPM ? { backgroundColor: colors.primary } : { backgroundColor: colors.surfaceElevated },
             ]}
             onPress={() => togglePeriod(true)}
           >
             <Text
               variant="caption"
               style={{ fontWeight: 'bold' }}
-              color={isPM ? 'inverse' : 'textPrimary'}
+              color={picked && isPM ? 'inverse' : 'textPrimary'}
             >
               PM
             </Text>
@@ -249,12 +272,257 @@ function CustomTimeSelector({
   );
 }
 
+function repeatLabel(hours: number): string {
+  return hours === 1 ? 'Every hour' : `Every ${hours} hours`;
+}
+
+/**
+ * "Keep reminding me until today's reading is done": Off, or repeat every
+ * 1, 2 or 3 hours from the reminder time until midnight.
+ */
+function RepeatUntilDoneSelector({
+  value,
+  onChange,
+}: {
+  value: number | null;
+  onChange: (hours: number | null) => void;
+}) {
+  const { colors } = useTheme();
+  const options: (number | null)[] = [null, ...REPEAT_INTERVAL_OPTIONS];
+  return (
+    <View style={{ marginTop: 12 }}>
+      <Text variant="bodySmall" style={{ fontWeight: 'bold' }}>
+        Keep reminding me until today's reading is done
+      </Text>
+      <Text variant="caption" color="textTertiary" style={{ marginTop: 2 }}>
+        Repeats from your reminder time until midnight, and stops as soon as every chapter of the day is read.
+      </Text>
+      <View style={styles.presetChipsRow}>
+        {options.map((hours) => {
+          const selected = value === hours;
+          return (
+            <TouchableOpacity
+              key={String(hours)}
+              onPress={() => onChange(hours)}
+              style={[
+                styles.presetChip,
+                {
+                  backgroundColor: selected ? colors.primary + '25' : colors.surface,
+                  borderColor: selected ? colors.primary : colors.border,
+                },
+              ]}
+              accessibilityRole="radio"
+              accessibilityState={{ selected }}
+            >
+              <Text
+                variant="caption"
+                style={{ fontSize: 11, fontWeight: selected ? '700' : '500' }}
+                color={selected ? 'primary' : 'textSecondary'}
+              >
+                {hours === null ? 'Off' : repeatLabel(hours)}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+/** "Mon, 10 Nov" for a 'yyyy-MM-dd' plan date */
+function formatPlanDate(dateKey?: string): string | null {
+  if (!dateKey) return null;
+  try {
+    return format(parseISO(dateKey), 'EEE, d MMM');
+  } catch {
+    return dateKey;
+  }
+}
+
+/** Number of pending days shown before "Show all" */
+const PENDING_PREVIEW_COUNT = 3;
+
+const DONE_GREEN = '#4E9F3D';
+const PENDING_AMBER = '#E5A93C';
+
+/** Where "Read" opens: the first chapter of the day not read yet */
+function readTarget(day: ReadingPlanDay): { bookNumber: number; chapter: number } {
+  const next = day.chapters && day.chapters.length > 0 ? firstUnreadChapter(day.chapters) : null;
+  return next ?? { bookNumber: day.bookNumber, chapter: day.startChapter };
+}
+
+/** "1 of 3 read" when the day has several chapters, else null */
+function progressLabel(day: ReadingPlanDay): string | null {
+  if (!day.chapterCount || day.chapterCount < 2) return null;
+  return formatDayProgress({ read: day.chaptersRead ?? 0, total: day.chapterCount });
+}
+
+/** One chip per chapter of a day; tapping a chip marks that chapter read or unread */
+function ChapterChips({
+  day,
+  onToggle,
+}: {
+  day: ReadingPlanDay;
+  onToggle: (seq: number, isRead: boolean) => void;
+}) {
+  const { colors } = useTheme();
+  if (!day.chapters || day.chapters.length < 2) return null;
+  return (
+    <View style={styles.chapterChipRow}>
+      {day.chapters.map((c) => {
+        const read = day.isCompleted || c.isRead;
+        const name = `${getBookAbbreviation(c.bookNumber)} ${c.chapter}`;
+        return (
+          <TouchableOpacity
+            key={c.seq}
+            onPress={() => onToggle(c.seq, !read)}
+            style={[
+              styles.chapterChip,
+              {
+                backgroundColor: read ? DONE_GREEN + '20' : colors.surfaceElevated,
+                borderColor: read ? DONE_GREEN : colors.border,
+              },
+            ]}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: read }}
+            accessibilityLabel={`${name}, ${read ? 'read' : 'not read'}`}
+            hitSlop={{ top: 4, bottom: 4, left: 2, right: 2 }}
+          >
+            <Ionicons
+              name={read ? 'checkmark-circle' : 'ellipse-outline'}
+              size={14}
+              color={read ? DONE_GREEN : colors.textTertiary}
+            />
+            <Text
+              variant="caption"
+              style={{ fontWeight: '600', color: read ? DONE_GREEN : colors.textPrimary }}
+            >
+              {name}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+interface PlanDayRowProps {
+  day: ReadingPlanDay;
+  onRead: () => void;
+  onMarkDone: () => void;
+  onToggleChapter: (seq: number, isRead: boolean) => void;
+}
+
+/** One plan day: day number, date, passage, and Read / Done actions */
+function PlanDayRow({ day, onRead, onMarkDone, onToggleChapter }: PlanDayRowProps) {
+  const { colors } = useTheme();
+  const [showChapters, setShowChapters] = useState(false);
+  const dateLabel = formatPlanDate(day.scheduledDate);
+  const passage = day.readingLabel || `${day.bookName} ${day.startChapter}`;
+  const progress = progressLabel(day);
+  const partial = !day.isCompleted && (day.chaptersRead ?? 0) > 0;
+
+  return (
+    <View
+      style={[
+        styles.scheduleItemCard,
+        {
+          backgroundColor: colors.surface,
+          borderColor: day.isCompleted ? '#4E9F3D50' : colors.border,
+          flexWrap: 'wrap',
+        },
+      ]}
+    >
+      <View style={{ flex: 1, marginRight: 8 }}>
+        <Text
+          variant="caption"
+          style={{ fontWeight: 'bold', color: day.isCompleted ? '#4E9F3D' : colors.primary }}
+        >
+          Day {day.dayNumber}
+          {dateLabel ? (
+            <Text variant="caption" color="textTertiary" style={{ fontWeight: 'normal' }}>
+              {'  •  '}
+              {dateLabel}
+            </Text>
+          ) : null}
+        </Text>
+        <Text variant="body" style={{ fontWeight: '600', marginTop: 2 }}>
+          {passage}
+        </Text>
+        {progress && (
+          <TouchableOpacity
+            onPress={() => setShowChapters((v) => !v)}
+            style={styles.progressToggle}
+            accessibilityRole="button"
+            accessibilityLabel={`${progress}. ${showChapters ? 'Hide' : 'Show'} chapters`}
+          >
+            <Text
+              variant="caption"
+              style={{
+                fontWeight: '700',
+                color: day.isCompleted ? DONE_GREEN : partial ? PENDING_AMBER : colors.textSecondary,
+              }}
+            >
+              {progress}
+            </Text>
+            <Ionicons
+              name={showChapters ? 'chevron-up' : 'chevron-down'}
+              size={12}
+              color={colors.textTertiary}
+            />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      <View style={styles.dayRowActions}>
+        <TouchableOpacity
+          style={[styles.smallActionBtn, { backgroundColor: colors.primary + '20' }]}
+          onPress={onRead}
+          accessibilityRole="button"
+          accessibilityLabel={`Read day ${day.dayNumber}: ${passage}`}
+        >
+          <Ionicons name="book-outline" size={14} color={colors.primary} />
+          <Text variant="caption" color="primary" style={{ fontWeight: 'bold' }}>
+            Read
+          </Text>
+        </TouchableOpacity>
+
+        {day.isCompleted ? (
+          <View style={styles.doneCheck} accessibilityLabel={`Day ${day.dayNumber} done`}>
+            <Ionicons name="checkmark-circle" size={18} color="#4E9F3D" />
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={[styles.smallActionBtn, { backgroundColor: colors.surfaceElevated }]}
+            onPress={onMarkDone}
+            accessibilityRole="button"
+            accessibilityLabel={`Mark day ${day.dayNumber} as done`}
+          >
+            <Ionicons name="checkmark-outline" size={14} color={colors.textSecondary} />
+            <Text variant="caption" color="textSecondary" style={{ fontWeight: '600' }}>
+              Done
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {showChapters && (
+        <View style={{ width: '100%' }}>
+          <ChapterChips day={day} onToggle={onToggleChapter} />
+        </View>
+      )}
+    </View>
+  );
+}
+
 export function ReadingPlanSection({
   plan,
   todayReading,
-  nextReading,
+  pendingDays = [],
+  upcomingDays = [],
   onStartPlan,
   onCompleteDay,
+  onToggleChapter,
   onCancelPlan,
   onUpdateReminder,
   onNavigateToReading,
@@ -264,18 +532,27 @@ export function ReadingPlanSection({
   // Selector modal state
   const [selectorVisible, setSelectorVisible] = useState(false);
   const [selectedPlanType, setSelectedPlanType] = useState<PlanType>('1_year');
-  const [reminderTime, setReminderTime] = useState('08:00');
-  const [reminderEnabled, setReminderEnabled] = useState(true);
+  // No reminder until the user picks a time
+  const [reminderTime, setReminderTime] = useState<string | null>(null);
+  const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [reminderRepeatHours, setReminderRepeatHours] = useState<number | null>(null);
 
   // Edit Time Modal for active plan
   const [editTimeModalVisible, setEditTimeModalVisible] = useState(false);
-  const [editTimeValue, setEditTimeValue] = useState(plan?.reminderTime || '08:00');
+  const [editTimeValue, setEditTimeValue] = useState<string | null>(plan?.reminderTime ?? null);
+  const [editRepeatHours, setEditRepeatHours] = useState<number | null>(plan?.reminderRepeatHours ?? null);
 
   // Full Schedule Explorer Modal
   const [scheduleExplorerVisible, setScheduleExplorerVisible] = useState(false);
   const [allDays, setAllDays] = useState<ReadingPlanDay[]>([]);
   const [scheduleFilter, setScheduleFilter] = useState<'all' | 'pending' | 'completed'>('all');
   const [searchDayText, setSearchDayText] = useState('');
+
+  // Pending (missed) days list: collapsed to the oldest few by default
+  const [showAllPending, setShowAllPending] = useState(false);
+  const visiblePendingDays = showAllPending
+    ? pendingDays
+    : pendingDays.slice(0, PENDING_PREVIEW_COUNT);
 
   // Custom Plan Generator State
   const [customTitle, setCustomTitle] = useState('My Bible Plan');
@@ -300,15 +577,34 @@ export function ReadingPlanSection({
         scope: customScope,
       };
     }
-    await onStartPlan(selectedPlanType, reminderTime, reminderEnabled, customConfig);
+    await onStartPlan(
+      selectedPlanType,
+      reminderEnabled ? reminderTime : null,
+      reminderEnabled && !!reminderTime,
+      customConfig,
+      reminderEnabled && reminderTime ? reminderRepeatHours : null
+    );
     setSelectorVisible(false);
+    setReminderTime(null);
+    setReminderEnabled(false);
+    setReminderRepeatHours(null);
   };
 
+  /** Saving a picked time turns the reminder on */
   const handleSaveActiveReminderTime = async () => {
-    if (!plan) return;
-    await onUpdateReminder(plan.reminderEnabled, editTimeValue);
+    if (!plan || !editTimeValue) return;
+    await onUpdateReminder(true, editTimeValue, editRepeatHours);
     setEditTimeModalVisible(false);
   };
+
+  const handleTurnOffReminder = async () => {
+    if (!plan) return;
+    await onUpdateReminder(false, plan.reminderTime);
+    setEditTimeModalVisible(false);
+  };
+
+  const activeReminderLabel = plan ? formatTo12Hour(plan.reminderTime) : null;
+  const activeReminderOn = !!plan?.reminderEnabled && !!activeReminderLabel;
 
   const planTypes: PlanType[] = [
     '1_year',
@@ -510,7 +806,11 @@ export function ReadingPlanSection({
                       fontSize: 11,
                     }}
                   >
-                    {todayReading.isCompleted ? '✓ Completed' : '⏳ Pending'}
+                    {todayReading.isCompleted
+                      ? '✓ Completed'
+                      : progressLabel(todayReading) && (todayReading.chaptersRead ?? 0) > 0
+                      ? `⏳ ${progressLabel(todayReading)}`
+                      : '⏳ Pending'}
                   </Text>
                 </View>
               </View>
@@ -519,13 +819,27 @@ export function ReadingPlanSection({
                 {todayReading.readingLabel || `${todayReading.bookName} ${todayReading.startChapter}`}
               </Text>
 
+              {/* Each chapter of today's reading can be marked on its own */}
+              {progressLabel(todayReading) && (
+                <View style={{ marginBottom: 4 }}>
+                  <Text variant="caption" color="textSecondary" style={{ fontWeight: '600' }}>
+                    {progressLabel(todayReading)} • tap a chapter to mark it
+                  </Text>
+                  <ChapterChips
+                    day={todayReading}
+                    onToggle={(seq, isRead) => onToggleChapter(todayReading.dayNumber, seq, isRead)}
+                  />
+                </View>
+              )}
+
               {/* Actions for Today */}
               <View style={styles.actionRow}>
                 <Button
                   label="Read Now 📖"
-                  onPress={() =>
-                    onNavigateToReading(todayReading.bookNumber, todayReading.startChapter)
-                  }
+                  onPress={() => {
+                    const target = readTarget(todayReading);
+                    onNavigateToReading(target.bookNumber, target.chapter);
+                  }}
                   variant="primary"
                   style={{ flex: 1 }}
                 />
@@ -541,46 +855,71 @@ export function ReadingPlanSection({
             </View>
           )}
 
-          {/* If today is completed, show Next Upcoming Reading */}
-          {todayReading?.isCompleted && nextReading && nextReading.dayNumber !== todayReading.dayNumber && (
-            <View
-              style={[
-                styles.nextReadingBox,
-                {
-                  backgroundColor: colors.surfaceElevated,
-                  borderColor: colors.border,
-                  borderRadius: borderRadius.md,
-                  padding: spacing.md,
-                  marginBottom: 12,
-                },
-              ]}
-            >
+          {/* PENDING: earlier days that are not done yet */}
+          {pendingDays.length > 0 && (
+            <View style={styles.daySection}>
               <View style={styles.todayHeader}>
-                <Ionicons name="arrow-forward-circle" size={18} color={colors.primary} />
-                <Text variant="bodySmall" color="primary" style={{ fontWeight: 'bold' }}>
-                  UP NEXT • DAY {nextReading.dayNumber}:
+                <Ionicons name="alert-circle-outline" size={18} color="#E5A93C" />
+                <Text variant="bodySmall" style={{ fontWeight: 'bold', color: '#E5A93C', flexShrink: 1 }}>
+                  Pending: not yet done ({pendingDays.length})
                 </Text>
               </View>
-
-              <Text variant="h3" style={{ fontWeight: '700', marginVertical: 4 }}>
-                {nextReading.readingLabel}
+              <Text variant="caption" color="textTertiary" style={styles.daySectionHint}>
+                Earlier days of this plan you haven't finished. Partly read days show how far you got.
               </Text>
+              <View style={styles.dayList}>
+                {visiblePendingDays.map((day) => (
+                  <PlanDayRow
+                    key={day.id}
+                    day={day}
+                    onRead={() => {
+                      const target = readTarget(day);
+                      onNavigateToReading(target.bookNumber, target.chapter);
+                    }}
+                    onMarkDone={() => onCompleteDay(day.dayNumber)}
+                    onToggleChapter={(seq, isRead) => onToggleChapter(day.dayNumber, seq, isRead)}
+                  />
+                ))}
+              </View>
+              {pendingDays.length > PENDING_PREVIEW_COUNT && (
+                <TouchableOpacity
+                  onPress={() => setShowAllPending((v) => !v)}
+                  style={styles.showAllBtn}
+                  accessibilityRole="button"
+                >
+                  <Text variant="caption" color="primary" style={{ fontWeight: '700' }}>
+                    {showAllPending ? 'Show fewer' : `Show all ${pendingDays.length} pending days`}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
 
-              <View style={styles.actionRow}>
-                <Button
-                  label="Read Ahead 📖"
-                  onPress={() =>
-                    onNavigateToReading(nextReading.bookNumber, nextReading.startChapter)
-                  }
-                  variant="primary"
-                  style={{ flex: 1 }}
-                />
-                <Button
-                  label="Mark Done ✓"
-                  onPress={() => onCompleteDay(nextReading.dayNumber)}
-                  variant="outline"
-                  style={{ flex: 1 }}
-                />
+          {/* READ AHEAD: the next few days, so they can be read early */}
+          {upcomingDays.length > 0 && (
+            <View style={styles.daySection}>
+              <View style={styles.todayHeader}>
+                <Ionicons name="play-forward-outline" size={18} color={colors.primary} />
+                <Text variant="bodySmall" color="primary" style={{ fontWeight: 'bold', flexShrink: 1 }}>
+                  Read ahead
+                </Text>
+              </View>
+              <Text variant="caption" color="textTertiary" style={styles.daySectionHint}>
+                Coming up next. Read and mark them done early if you have time.
+              </Text>
+              <View style={styles.dayList}>
+                {upcomingDays.map((day) => (
+                  <PlanDayRow
+                    key={day.id}
+                    day={day}
+                    onRead={() => {
+                      const target = readTarget(day);
+                      onNavigateToReading(target.bookNumber, target.chapter);
+                    }}
+                    onMarkDone={() => onCompleteDay(day.dayNumber)}
+                    onToggleChapter={(seq, isRead) => onToggleChapter(day.dayNumber, seq, isRead)}
+                  />
+                ))}
               </View>
             </View>
           )}
@@ -606,32 +945,46 @@ export function ReadingPlanSection({
               style={styles.reminderInfo}
               activeOpacity={0.7}
               onPress={() => {
-                setEditTimeValue(plan.reminderTime || '08:00');
+                setEditTimeValue(plan.reminderTime);
+                setEditRepeatHours(plan.reminderRepeatHours);
                 setEditTimeModalVisible(true);
               }}
+              accessibilityRole="button"
+              accessibilityLabel={
+                activeReminderOn
+                  ? `Daily reminder at ${activeReminderLabel}. Change time`
+                  : 'Reminder off. Set a time'
+              }
             >
               <Ionicons
-                name={plan.reminderEnabled ? 'notifications' : 'notifications-off-outline'}
+                name={activeReminderOn ? 'notifications' : 'notifications-off-outline'}
                 size={18}
-                color={plan.reminderEnabled ? colors.primary : colors.textTertiary}
+                color={activeReminderOn ? colors.primary : colors.textTertiary}
               />
-              <View>
+              <View style={{ flexShrink: 1 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   <Text variant="caption" color="textPrimary" style={{ fontWeight: '700' }}>
-                    Daily Reminder: {formatTo12Hour(plan.reminderTime)}
+                    {activeReminderOn ? `Daily reminder: ${activeReminderLabel}` : 'Reminder: off. Set a time'}
                   </Text>
                   <Ionicons name="pencil" size={12} color={colors.primary} />
                 </View>
                 <Text variant="caption" color="textTertiary" style={{ fontSize: 10 }}>
-                  Tap to customize notification time
+                  {!activeReminderOn
+                    ? 'No reminder until you pick a time'
+                    : plan.reminderRepeatHours
+                    ? `${repeatLabel(plan.reminderRepeatHours)} until the day's reading is done`
+                    : 'Tap to change the time'}
                 </Text>
               </View>
             </TouchableOpacity>
-            <Switch
-              value={plan.reminderEnabled}
-              onValueChange={(val) => onUpdateReminder(val, plan.reminderTime)}
-              trackColor={{ false: colors.surfaceElevated, true: colors.primary }}
-            />
+            {/* The switch only appears once a time has been picked */}
+            {activeReminderLabel && (
+              <Switch
+                value={activeReminderOn}
+                onValueChange={(val) => onUpdateReminder(val, plan.reminderTime)}
+                trackColor={{ false: colors.surfaceElevated, true: colors.primary }}
+              />
+            )}
           </View>
         </Card>
       )}
@@ -780,7 +1133,9 @@ export function ReadingPlanSection({
                   Daily Scripture Reminder
                 </Text>
                 <Text variant="caption" color="textSecondary">
-                  Delivers daily notification with current day's reading
+                  {reminderEnabled && reminderTime
+                    ? `Reminder at ${formatTo12Hour(reminderTime)} with the day's reading`
+                    : 'Reminder: off. Set a time'}
                 </Text>
               </View>
               <Switch
@@ -797,6 +1152,12 @@ export function ReadingPlanSection({
                   Choose Notification Time:
                 </Text>
                 <CustomTimeSelector value={reminderTime} onChange={setReminderTime} />
+                {!reminderTime && (
+                  <Text variant="caption" color="textTertiary" style={{ marginTop: 6 }}>
+                    Pick a time to turn the reminder on. Without one, no reminder is sent.
+                  </Text>
+                )}
+                <RepeatUntilDoneSelector value={reminderRepeatHours} onChange={setReminderRepeatHours} />
               </View>
             )}
 
@@ -850,18 +1211,29 @@ export function ReadingPlanSection({
             </Text>
 
             <CustomTimeSelector value={editTimeValue} onChange={setEditTimeValue} />
+            <RepeatUntilDoneSelector value={editRepeatHours} onChange={setEditRepeatHours} />
 
             <View style={styles.modalActions}>
-              <Button
-                label="Cancel"
-                onPress={() => setEditTimeModalVisible(false)}
-                variant="outline"
-                style={{ flex: 1 }}
-              />
+              {activeReminderOn ? (
+                <Button
+                  label="Turn Off"
+                  onPress={handleTurnOffReminder}
+                  variant="outline"
+                  style={{ flex: 1 }}
+                />
+              ) : (
+                <Button
+                  label="Cancel"
+                  onPress={() => setEditTimeModalVisible(false)}
+                  variant="outline"
+                  style={{ flex: 1 }}
+                />
+              )}
               <Button
                 label="Save Time"
                 onPress={handleSaveActiveReminderTime}
                 variant="primary"
+                disabled={!editTimeValue}
                 style={{ flex: 1 }}
               />
             </View>
@@ -984,6 +1356,11 @@ export function ReadingPlanSection({
                     <Text variant="body" style={{ fontWeight: '600', marginTop: 2 }}>
                       {item.readingLabel}
                     </Text>
+                    {!item.isCompleted && (item.chaptersRead ?? 0) > 0 && progressLabel(item) && (
+                      <Text variant="caption" style={{ fontWeight: '700', color: PENDING_AMBER }}>
+                        {progressLabel(item)}
+                      </Text>
+                    )}
                   </View>
 
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -991,7 +1368,8 @@ export function ReadingPlanSection({
                       style={[styles.smallActionBtn, { backgroundColor: colors.primary + '20' }]}
                       onPress={() => {
                         setScheduleExplorerVisible(false);
-                        onNavigateToReading(item.bookNumber, item.startChapter);
+                        const target = readTarget(item);
+                        onNavigateToReading(target.bookNumber, target.chapter);
                       }}
                     >
                       <Ionicons name="book-outline" size={14} color={colors.primary} />
@@ -1098,8 +1476,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 12,
   },
-  nextReadingBox: {
-    borderWidth: 1,
+  daySection: {
+    marginBottom: 12,
+  },
+  daySectionHint: {
+    marginTop: 2,
+    marginBottom: 8,
+  },
+  dayList: {
+    gap: 8,
+  },
+  dayRowActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  showAllBtn: {
+    alignSelf: 'flex-start',
+    paddingVertical: 8,
   },
   todayHeader: {
     flexDirection: 'row',
@@ -1294,6 +1688,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 6,
+  },
+  progressToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+  chapterChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+  },
+  chapterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
   },
   doneCheck: {
     paddingHorizontal: 6,

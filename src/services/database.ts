@@ -11,6 +11,7 @@ import {
   needsReseed,
   type SqlExecutor,
 } from '../database/userSchema';
+import { runMigrations } from '../database/migrations';
 import { GLOBAL_LANGUAGES, GLOBAL_BIBLE_VERSIONS } from '../database/globalBibleCatalog';
 import { SEED_DB, checkSeedChecksum, seedSourceCandidates } from '../database/seedManifest';
 import { LLM_MODEL_ID, renamedModelFile } from '../ai/modelCatalog';
@@ -225,6 +226,15 @@ async function openAndPrepareDatabase(): Promise<SQLite.SQLiteDatabase> {
     PRAGMA temp_store = MEMORY;
   `);
 
+  // Schema version before this launch, for the migrations below
+  let previousVersion = 0;
+  try {
+    const row = await database.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
+    previousVersion = row?.user_version ?? 0;
+  } catch (e) {
+    console.warn('[DB] Could not read user_version:', e);
+  }
+
   // Run all CREATE TABLE statements (failsafes to ensure local tables match schema if any changes are made)
   for (const sql of CREATE_TABLES_SQL) {
     try {
@@ -239,8 +249,14 @@ async function openAndPrepareDatabase(): Promise<SQLite.SQLiteDatabase> {
   await attachUserDatabase(database, userDbPath);
   await rebuildNotesSearchIndexOnce(database);
 
-  // Set schema version
-  await database.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  // Upgrade existing tables, then record the schema version. If a migration
+  // fails the version is left alone so it runs again on the next launch.
+  try {
+    await runMigrations(database, previousVersion);
+    await database.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  } catch (e) {
+    console.error('[DB] Migration failed:', e);
+  }
 
   // Populate all 2,456+ global languages and 3,823+ version combinations if not yet populated
   await populateGlobalBibleCatalog(database);

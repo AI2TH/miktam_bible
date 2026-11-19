@@ -1,5 +1,5 @@
 import React from 'react';
-import { FlatList, StyleSheet, View, TouchableOpacity } from 'react-native';
+import { FlatList, StyleSheet, View, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useTheme } from '../../theme';
 import { VerseText } from './VerseText';
 import { Text } from '../ui/Text';
@@ -22,6 +22,11 @@ interface ChapterViewProps {
   secondaryVerseMap?: Map<number, Verse>;
   secondaryVersionAbbr?: string;
   isDualMode?: boolean;
+  /** True until the chapter query has finished. Shows a spinner, never "not available". */
+  loading?: boolean;
+  /** Set when the chapter query failed */
+  error?: string | null;
+  onRetry?: () => void;
 }
 
 export function ChapterView({
@@ -39,6 +44,9 @@ export function ChapterView({
   secondaryVerseMap,
   secondaryVersionAbbr,
   isDualMode = false,
+  loading = false,
+  error = null,
+  onRetry,
 }: ChapterViewProps) {
   const { colors, spacing, borderRadius } = useTheme();
 
@@ -64,32 +72,71 @@ export function ChapterView({
       contentContainerStyle={{ padding: spacing.base, paddingBottom: spacing['4xl'] }}
       showsVerticalScrollIndicator={false}
       ListEmptyComponent={
-        <View style={{ padding: spacing['2xl'], alignItems: 'center', justifyContent: 'center', marginVertical: spacing['2xl'] }}>
-          <Text variant="h3" color="textSecondary" style={{ textAlign: 'center', marginBottom: spacing.sm }}>
-            Content Not Available
-          </Text>
-          <Text variant="bodySmall" color="textTertiary" style={{ textAlign: 'center', marginBottom: spacing.md }}>
-            This book or chapter is not included in the selected Bible translation.
-          </Text>
-          <TouchableOpacity
-            onPress={() => useReaderStore.getState().setVersion('kjv')}
-            style={{
-              backgroundColor: colors.surface,
-              borderColor: colors.primary,
-              borderWidth: 1,
-              paddingHorizontal: spacing.base,
-              paddingVertical: spacing.sm,
-              borderRadius: borderRadius.md,
-            }}
+        loading ? (
+          <View
+            style={[styles.emptyBox, { padding: spacing['2xl'], marginVertical: spacing['2xl'] }]}
+            accessibilityRole="progressbar"
+            accessibilityLabel="Loading chapter"
           >
-            <Text variant="button" color="primary">
-              Switch to KJV (Full Bible)
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text variant="bodySmall" color="textTertiary" style={{ textAlign: 'center', marginTop: spacing.sm }}>
+              Loading chapter…
             </Text>
-          </TouchableOpacity>
-        </View>
+          </View>
+        ) : error ? (
+          <View style={[styles.emptyBox, { padding: spacing['2xl'], marginVertical: spacing['2xl'] }]}>
+            <Text variant="h3" color="textSecondary" style={{ textAlign: 'center', marginBottom: spacing.sm }}>
+              Couldn't load this chapter
+            </Text>
+            <Text variant="bodySmall" color="textTertiary" style={{ textAlign: 'center', marginBottom: spacing.md }}>
+              {error}
+            </Text>
+            {onRetry && (
+              <TouchableOpacity
+                onPress={onRetry}
+                style={{
+                  backgroundColor: colors.surface,
+                  borderColor: colors.primary,
+                  borderWidth: 1,
+                  paddingHorizontal: spacing.base,
+                  paddingVertical: spacing.sm,
+                  borderRadius: borderRadius.md,
+                }}
+              >
+                <Text variant="button" color="primary">
+                  Try again
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : (
+          <View style={{ padding: spacing['2xl'], alignItems: 'center', justifyContent: 'center', marginVertical: spacing['2xl'] }}>
+            <Text variant="h3" color="textSecondary" style={{ textAlign: 'center', marginBottom: spacing.sm }}>
+              Content Not Available
+            </Text>
+            <Text variant="bodySmall" color="textTertiary" style={{ textAlign: 'center', marginBottom: spacing.md }}>
+              This book or chapter is not included in the selected Bible translation.
+            </Text>
+            <TouchableOpacity
+              onPress={() => useReaderStore.getState().setVersion('kjv')}
+              style={{
+                backgroundColor: colors.surface,
+                borderColor: colors.primary,
+                borderWidth: 1,
+                paddingHorizontal: spacing.base,
+                paddingVertical: spacing.sm,
+                borderRadius: borderRadius.md,
+              }}
+            >
+              <Text variant="button" color="primary">
+                Switch to KJV (Full Bible)
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )
       }
       ListFooterComponent={
-        (onNextChapter || onPrevChapter) ? (
+        !loading && (onNextChapter || onPrevChapter) ? (
           <View style={[styles.navFooter, { marginTop: spacing.xl, borderTopColor: colors.border, paddingTop: spacing.lg }]}>
             <View style={styles.navRow}>
               {onPrevChapter && (
@@ -160,6 +207,10 @@ export function ChapterView({
 }
 
 const styles = StyleSheet.create({
+  emptyBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   navFooter: {
     borderTopWidth: 1,
     width: '100%',

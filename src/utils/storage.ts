@@ -8,9 +8,7 @@ const SETTINGS_KEYS = [
   'themeMode',
   'preferredVersion',
   'preferredLanguage',
-  'reminderEnabled',
-  'reminderHour',
-  'reminderMinute'
+  'dailyVerseTime',
 ];
 
 // Attempt to initialize MMKV
@@ -41,13 +39,7 @@ export async function initSafeStorage(): Promise<void> {
     const pairs = await AsyncStorage.multiGet(SETTINGS_KEYS);
     for (const [key, value] of pairs) {
       if (value !== null) {
-        if (key === 'reminderEnabled') {
-          memoryCache[key] = value === 'true';
-        } else if (key === 'reminderHour' || key === 'reminderMinute') {
-          memoryCache[key] = parseInt(value, 10);
-        } else {
-          memoryCache[key] = value;
-        }
+        memoryCache[key] = value;
       }
     }
     console.log('[Storage] Pre-loaded settings:', memoryCache);

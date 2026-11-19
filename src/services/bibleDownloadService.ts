@@ -9,6 +9,7 @@
  */
 
 import { getDatabase } from './database';
+import { clearChapterCache } from './bibleService';
 import * as FileSystem from 'expo-file-system/legacy';
 import { assertVerseCount, countDistinctVerses } from './importCheck';
 import { GLOBAL_BIBLE_VERSIONS } from '../database/globalBibleCatalog';
@@ -753,6 +754,7 @@ export async function downloadBibleVersion(
       try {
         console.log(`[BibleDownloadService] Attempting ultra-fast SQLite ATTACH path for candidates:`, candidates);
         await downloadViaDatabaseAttach(normVersion, candidates, report);
+        clearChapterCache();
         return { success: true };
       } catch (attachErr) {
         console.warn(`[BibleDownloadService] Fast ATTACH failed for candidates, falling back to JSON:`, attachErr);
@@ -761,6 +763,7 @@ export async function downloadBibleVersion(
 
     // Fallback: JSON parser
     await downloadViaJson(normVersion, report);
+    clearChapterCache();
     return { success: true };
   } catch (error: any) {
     console.error(`[BibleDownloadService] Failed to download version ${normVersion}:`, error);
@@ -785,6 +788,7 @@ export async function deleteBibleVersion(versionId: string): Promise<boolean> {
         [normVersion]
       );
     });
+    clearChapterCache();
     return true;
   } catch (e) {
     console.error(`[BibleDownloadService] Failed to delete version ${normVersion}:`, e);

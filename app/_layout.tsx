@@ -6,7 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { LogBox, View, Image, StyleSheet, ActivityIndicator, Text } from 'react-native';
 import { initDatabase } from '../src/services/database';
 import { initSafeStorage } from '../src/utils/storage';
-import { initNotificationChannels } from '../src/services/notificationService';
+import { initNotificationChannels, syncReadingPlanNotification } from '../src/services/notificationService';
 import { useSettingsStore } from '../src/stores/settingsStore';
 import { useTheme } from '../src/theme';
 
@@ -35,6 +35,8 @@ export default function RootLayout() {
         useSettingsStore.getState().hydrate();
         await initDatabase();
         initNotificationChannels().catch(() => {});
+        // Reminders are pre-scheduled a few days ahead; top the window up on every launch
+        syncReadingPlanNotification().catch(() => {});
         console.log('[RootLayout] Database and storage initialization complete');
         setDbInitialized(true);
       } catch (e: any) {

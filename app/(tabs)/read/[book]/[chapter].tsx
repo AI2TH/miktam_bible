@@ -63,8 +63,12 @@ export default function ChapterReaderScreen() {
     markChapterAsRead(currentVersionId, bookNumber, chapterNumber, 10).catch(() => {});
   }, [bookNumber, chapterNumber, navigateTo, currentVersionId]);
 
-  // Hook layers
-  const { verses, secondaryVerseMap, loading } = useBibleReader();
+  // Hook layers. Load the chapter from the route: the store only catches up in
+  // the effect above, after the first render.
+  const { verses, secondaryVerseMap, loading, error: chapterError, reload: reloadChapter } = useBibleReader({
+    bookNumber,
+    chapter: chapterNumber,
+  });
   const { add: addBookmark, remove: removeBookmark, removeByVerse: removeBookmarkByVerse, bookmarks, refetch: refetchBookmarks } = useBookmarks();
   const { getNote, save: saveNote, remove: removeNote } = useNotes();
   const { originalWords, loadOriginalWords } = useConcordance();
@@ -261,20 +265,27 @@ export default function ChapterReaderScreen() {
     });
   };
 
-  const title = `${getBookName(currentBookNumber, currentVersionId)} ${currentChapter}`;
+  // Title from the route, so the first frame already names the chapter being opened
+  const titleBookName = getBookName(bookNumber, currentVersionId);
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
+      {/* Header: book and chapter get the whole first row; the reader controls
+          sit on a second row so they can never cover the title on narrow
+          phones or at large font sizes. */}
       <Header
-        title={title}
+        title={titleBookName}
+        titleSuffix={String(chapterNumber)}
+        titleLines={2}
         showBack={true}
         onBack={handleBack}
         showStreak={false}
-        rightAction={
-          <View style={styles.headerRight}>
-            <TouchableOpacity 
+        toolbar={
+          <>
+            <TouchableOpacity
               onPress={() => setVersionSheetVisible(true)}
+              accessibilityRole="button"
+              accessibilityLabel={`Translation: ${getVersionAbbreviation(currentVersionId)}. Change translation`}
               style={[
                 styles.versionBadge,
                 { backgroundColor: colors.surface, borderColor: colors.border }
@@ -288,6 +299,12 @@ export default function ChapterReaderScreen() {
             {/* Dual Language Badge */}
             <TouchableOpacity
               onPress={() => setDualSheetVisible(true)}
+              accessibilityRole="button"
+              accessibilityLabel={
+                dualLanguageEnabled && secondaryVersionId
+                  ? `Dual language on with ${getVersionAbbreviation(secondaryVersionId)}`
+                  : 'Dual language off. Add a second translation'
+              }
               style={[
                 styles.dualBadge,
                 dualLanguageEnabled
@@ -317,6 +334,8 @@ export default function ChapterReaderScreen() {
             <View style={[styles.fontControlGroup, { borderColor: colors.border, backgroundColor: colors.surface }]}>
               <TouchableOpacity
                 onPress={() => setFontSize(Math.max(12, fontSize - 2))}
+                accessibilityRole="button"
+                accessibilityLabel="Smaller text"
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
                 style={styles.fontBtn}
               >
@@ -327,13 +346,15 @@ export default function ChapterReaderScreen() {
               </Text>
               <TouchableOpacity
                 onPress={() => setFontSize(Math.min(32, fontSize + 2))}
+                accessibilityRole="button"
+                accessibilityLabel="Larger text"
                 hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
                 style={styles.fontBtn}
               >
                 <Ionicons name="add" size={16} color={colors.primary} />
               </TouchableOpacity>
             </View>
-          </View>
+          </>
         }
       />
 
@@ -349,6 +370,9 @@ export default function ChapterReaderScreen() {
         secondaryVerseMap={secondaryVerseMap}
         secondaryVersionAbbr={secondaryVersionId ? getVersionAbbreviation(secondaryVersionId) : undefined}
         isDualMode={dualLanguageEnabled}
+        loading={loading}
+        error={chapterError}
+        onRetry={reloadChapter}
         onNextChapter={() => {
           const maxChapters = CHAPTERS_PER_BOOK[currentBookNumber] || 50;
           if (currentChapter < maxChapters) {
@@ -798,14 +822,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
   versionBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 6,
     borderWidth: 1,
   },
@@ -816,8 +835,8 @@ const styles = StyleSheet.create({
   dualBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 6,
     borderWidth: 1,
   },
@@ -831,7 +850,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 1,
     paddingHorizontal: 4,
-    paddingVertical: 2,
+    paddingVertical: 4,
   },
   fontBtn: {
     paddingHorizontal: 4,
