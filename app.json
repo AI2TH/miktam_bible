@@ -2,7 +2,7 @@
   "expo": {
     "name": "Miktam Bible",
     "slug": "bible-app",
-    "version": "1.2.2",
+    "version": "1.2.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "bible-app",
@@ -29,7 +29,7 @@
         "backgroundColor": "#0F0F14"
       },
       "package": "miktam.bible",
-      "versionCode": 23,
+      "versionCode": 24,
       "permissions": [
         "RECORD_AUDIO",
         "VIBRATE",
@@ -52,7 +52,8 @@
         {
           "microphonePermission": "Allow Miktam Bible to record voice memos."
         }
-      ]
+      ],
+      "./plugins/withHardwareFeatures"
     ],
     "experiments": {
       "typedRoutes": true

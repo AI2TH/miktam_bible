@@ -24,6 +24,16 @@ To get Early Access to Miktam Bible on Google Play, testers only need to do **ON
 
 ---
 
+## [v1.2.3] — 2026-11-19
+### Google Play Console Device Availability & Manifest Feature Declarations
+- **📱 Expanded Device Availability (Play Console Policy Compliance)**:
+  - Explicitly declared `android.hardware.screen.portrait`, `android.hardware.screen.landscape`, and `android.hardware.microphone` as optional hardware features (`android:required="false"`).
+  - Resolves Google Play Console pre-launch blocker preventing submission for review on tablets, foldables, desktop/ChromeOS, and Android XR devices.
+- **🔢 Release Bump**:
+  - `versionCode` bumped to `24`, `version` bumped to `1.2.3`.
+
+---
+
 ## [v1.2.2] — 2026-11-19
 ### Instant Chapter Loading, Reader Header Fix, User Data Isolation & Code Review Fixes
 - **⚡ Instant Chapter Loading (0.02ms)**:
